@@ -160,10 +160,7 @@ impl Registry {
                     let clean_p = p.trim_end_matches('*').trim_end_matches('/');
                     if clean_p.is_empty() || p == "/" || p == "/*" {
                         Some(1)
-                    } else if path == clean_p
-                        || path.starts_with(&format!("{}/", clean_p))
-                        || path.starts_with(&format!("{}?", clean_p))
-                    {
+                    } else if path == clean_p || path.starts_with(&format!("{}/", clean_p)) {
                         Some(clean_p.len())
                     } else {
                         None
@@ -234,7 +231,7 @@ impl Registry {
                         for target in &mut service.targets {
                             let health_url = format!("{}{}", target.url, health_path);
                             match client.get(&health_url).send().await {
-                                Ok(res) if res.status().is_success() => {
+                                Ok(res) if res.status().is_success() || res.status().is_redirection() || res.status() == reqwest::StatusCode::UNAUTHORIZED || res.status() == reqwest::StatusCode::FORBIDDEN => {
                                     if !target.is_healthy {
                                         info!("Upstream target {} for service {} is HEALTHY", target.url, service.name);
                                     }

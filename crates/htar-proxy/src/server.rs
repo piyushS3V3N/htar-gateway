@@ -44,7 +44,13 @@ impl GatewayServer {
                 }],
                 connect_timeout_ms: 5000,
                 retries: 3,
-                health_check_path: Some("/_health".to_string()),
+                health_check_path: route_cfg.health_check_path.clone().or_else(|| {
+                    if route_cfg.path_prefix.starts_with("/v2") {
+                        Some("/v2/".to_string())
+                    } else {
+                        Some("/_health".to_string())
+                    }
+                }),
             });
 
             registry.add_route(Route {
@@ -53,7 +59,7 @@ impl GatewayServer {
                 hosts: vec![],
                 paths: vec![route_cfg.path_prefix.clone()],
                 methods: vec![],
-                strip_path: false,
+                strip_path: route_cfg.strip_path,
                 enable_cache: route_cfg.enable_cache,
                 cache_ttl_secs: route_cfg.cache_ttl_secs,
             });
@@ -305,22 +311,7 @@ impl GatewayServer {
 
         // Compute Target Path (supporting strip_path)
         let request_path = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
-        let target_path = if route.strip_path {
-            let mut stripped = request_path;
-            for prefix in &route.paths {
-                if stripped.starts_with(prefix) {
-                    stripped = &stripped[prefix.len()..];
-                    break;
-                }
-            }
-            if stripped.is_empty() || !stripped.starts_with('/') {
-                format!("/{}", stripped)
-            } else {
-                stripped.to_string()
-            }
-        } else {
-            request_path.to_string()
-        };
+        let target_path = compute_target_path(request_path, &route.paths, route.strip_path);
 
         let target_url = format!("{}{}", upstream_base_url, target_path);
 
@@ -394,6 +385,41 @@ impl GatewayServer {
             }
         }
     }
+}
+
+pub fn compute_target_path(request_path: &str, route_paths: &[String], strip_path: bool) -> String {
+    if !strip_path {
+        return request_path.to_string();
+    }
+
+    for p in route_paths {
+        let clean_p = p.trim_end_matches('*').trim_end_matches('/');
+        if clean_p.is_empty() || clean_p == "/" {
+            return request_path.to_string();
+        }
+
+        if request_path == clean_p {
+            return "/".to_string();
+        }
+
+        let with_slash = format!("{}/", clean_p);
+        if request_path.starts_with(&with_slash) {
+            let remainder = &request_path[clean_p.len()..];
+            return if remainder.is_empty() {
+                "/".to_string()
+            } else {
+                remainder.to_string()
+            };
+        }
+
+        let with_query = format!("{}?", clean_p);
+        if request_path.starts_with(&with_query) {
+            let remainder = &request_path[clean_p.len()..];
+            return format!("/{}", remainder);
+        }
+    }
+
+    request_path.to_string()
 }
 
 fn full_body(chunk: Bytes) -> BoxBody<Bytes, hyper::Error> {

@@ -115,6 +115,9 @@ impl K8sController {
             .cloned()
             .unwrap_or_else(|| format!("/{}", name));
 
+        let strip_path = determine_strip_path(&path, annotations);
+        let health_check_path = determine_health_check_path(&path, annotations);
+
         let port = k8s_svc
             .spec
             .as_ref()
@@ -140,7 +143,7 @@ impl K8sController {
             }],
             connect_timeout_ms: 5000,
             retries: 3,
-            health_check_path: Some("/".to_string()),
+            health_check_path,
         });
 
         registry.add_route(Route {
@@ -149,7 +152,7 @@ impl K8sController {
             hosts: vec![],
             paths: vec![path],
             methods: vec![],
-            strip_path: true,
+            strip_path,
             enable_cache: true,
             cache_ttl_secs: Some(120),
         });
@@ -221,6 +224,9 @@ impl K8sController {
                                     namespace, name, path_str, cluster_target
                                 );
 
+                                let strip_path = determine_strip_path(&path_str, meta.annotations.as_ref());
+                                let health_check_path = determine_health_check_path(&path_str, meta.annotations.as_ref());
+
                                 let svc = registry.add_service(Service {
                                     id: svc_id.clone(),
                                     name: format!("{}-ing-{}", namespace, target_svc_name),
@@ -231,7 +237,7 @@ impl K8sController {
                                     }],
                                     connect_timeout_ms: 5000,
                                     retries: 3,
-                                    health_check_path: Some("/".to_string()),
+                                    health_check_path,
                                 });
 
                                 let host_list = rule.host.as_ref().map(|h| vec![h.clone()]).unwrap_or_default();
@@ -245,7 +251,7 @@ impl K8sController {
                                     hosts: host_list,
                                     paths: vec![path_str],
                                     methods: vec![],
-                                    strip_path: true,
+                                    strip_path,
                                     enable_cache: true,
                                     cache_ttl_secs: Some(60),
                                 });
@@ -302,5 +308,33 @@ impl K8sController {
                 }
             }
         }
+    }
+}
+
+fn determine_strip_path(path_str: &str, annotations: Option<&std::collections::BTreeMap<String, String>>) -> bool {
+    if let Some(annos) = annotations {
+        if let Some(val) = annos.get("htar.gateway/strip-path") {
+            return val.eq_ignore_ascii_case("true");
+        }
+    }
+
+    if path_str == "/" || path_str.starts_with("/v2") {
+        return false;
+    }
+
+    true
+}
+
+fn determine_health_check_path(path_str: &str, annotations: Option<&std::collections::BTreeMap<String, String>>) -> Option<String> {
+    if let Some(annos) = annotations {
+        if let Some(val) = annos.get("htar.gateway/health-check-path") {
+            return Some(val.clone());
+        }
+    }
+
+    if path_str.starts_with("/v2") {
+        Some("/v2/".to_string())
+    } else {
+        Some("/".to_string())
     }
 }

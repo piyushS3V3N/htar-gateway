@@ -102,4 +102,63 @@ mod tests {
         let res_err = pipeline.execute_request_plugins("route1", "svc1", &registry, &mut ctx_invalid);
         assert!(matches!(res_err, plugins::PluginResult::Forbidden(_)));
     }
+
+    #[test]
+    fn test_v2_catalog_path_computation() {
+        use server::compute_target_path;
+
+        let paths = vec!["/v2".to_string()];
+
+        // With strip_path = false (Preserve full path for Docker Registry)
+        let path1 = compute_target_path("/v2/_catalog?n=1000", &paths, false);
+        assert_eq!(path1, "/v2/_catalog?n=1000");
+
+        // With strip_path = true
+        let path2 = compute_target_path("/v2/_catalog?n=1000", &paths, true);
+        assert_eq!(path2, "/_catalog?n=1000");
+
+        // Exact match with strip_path = true
+        let path3 = compute_target_path("/v2", &paths, true);
+        assert_eq!(path3, "/");
+
+        // Trailing slash prefix /v2/ with strip_path = true
+        let paths_slash = vec!["/v2/".to_string()];
+        let path4 = compute_target_path("/v2/_catalog?n=1000", &paths_slash, true);
+        assert_eq!(path4, "/_catalog?n=1000");
+    }
+
+    #[test]
+    fn test_v2_registry_route_matching() {
+        let registry = Registry::new();
+
+        let service = registry.add_service(Service {
+            id: "docker_reg_svc".to_string(),
+            name: "docker-registry".to_string(),
+            targets: vec![UpstreamTarget {
+                url: "http://127.0.0.1:5000".to_string(),
+                weight: 10,
+                is_healthy: true,
+            }],
+            connect_timeout_ms: 3000,
+            retries: 2,
+            health_check_path: Some("/v2/".to_string()),
+        });
+
+        let route = registry.add_route(Route {
+            id: "v2_route".to_string(),
+            service_id: service.id.clone(),
+            hosts: vec![],
+            paths: vec!["/v2".to_string()],
+            methods: vec![],
+            strip_path: false,
+            enable_cache: false,
+            cache_ttl_secs: None,
+        });
+
+        let matched = registry.match_request("localhost:8443", "GET", "/v2/_catalog");
+        assert!(matched.is_some());
+        let (r, s) = matched.unwrap();
+        assert_eq!(r.id, route.id);
+        assert_eq!(s.id, service.id);
+    }
 }

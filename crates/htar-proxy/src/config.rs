@@ -42,6 +42,10 @@ pub struct RouteConfig {
     pub id: String,
     pub path_prefix: String,
     pub upstream_url: String,
+    #[serde(default)]
+    pub strip_path: bool,
+    #[serde(default)]
+    pub health_check_path: Option<String>,
     pub enable_cache: bool,
     pub cache_ttl_secs: Option<u64>,
 }

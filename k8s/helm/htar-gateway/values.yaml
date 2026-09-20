@@ -14,7 +14,7 @@ rbac:
 
 service:
   type: LoadBalancer
-  port: 8088
+  port: 80
   targetPort: 8443
 
 resources:
