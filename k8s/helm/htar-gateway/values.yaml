@@ -1,0 +1,39 @@
+replicaCount: 3
+
+image:
+  repository: htar-gateway
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+serviceAccount:
+  create: true
+  name: "htar-gateway-sa"
+
+rbac:
+  create: true
+
+service:
+  type: LoadBalancer
+  port: 8088
+  targetPort: 8443
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+
+config:
+  host: "0.0.0.0"
+  port: 8443
+  workerThreads: 8
+  cacheEnabled: true
+  maxHotMemoryMb: 512

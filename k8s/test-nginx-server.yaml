@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-test-config
+  namespace: default
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+
+        location / {
+            default_type application/json;
+            return 200 '{"status":"success","server":"Nginx-Overwatch-Server","message":"Welcome to HTAR Gateway Nginx Test Pod","timestamp":2026}';
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-test-server
+  namespace: default
+  labels:
+    app: nginx-test-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-test-server
+  template:
+    metadata:
+      labels:
+        app: nginx-test-server
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+      volumes:
+        - name: config
+          configMap:
+            name: nginx-test-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-test-server
+  namespace: default
+  annotations:
+    htar.gateway/enable: "true"
+    htar.gateway/path: "/api/v1/nginx"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 80
+  selector:
+    app: nginx-test-server
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-test-ingress
+  namespace: default
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/v1/nginx
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-test-server
+                port:
+                  number: 8080

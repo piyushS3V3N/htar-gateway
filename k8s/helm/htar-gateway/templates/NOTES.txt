@@ -1,0 +1,15 @@
+HTAR Enterprise API Gateway chart deployed successfully!
+
+1. Get the Gateway LoadBalancer IP / URL:
+{{- if contains "LoadBalancer" .Values.service.type }}
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "htar-gateway.fullname" . }}-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "HTAR Gateway URL: http://$SERVICE_IP:{{ .Values.service.port }}"
+{{- else if contains "ClusterIP" .Values.service.type }}
+  echo "HTAR Gateway ClusterIP: http://{{ include "htar-gateway.fullname" . }}-service.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}"
+{{- end }}
+
+2. View Auto-Discovered Endpoints:
+  curl http://$SERVICE_IP:{{ .Values.service.port }}/_htar/endpoints
+
+3. Admin API Control Plane:
+  curl http://$SERVICE_IP:{{ .Values.service.port }}/admin/v1/overview

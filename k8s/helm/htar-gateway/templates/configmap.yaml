@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "htar-gateway.fullname" . }}-config
+  labels:
+    {{- include "htar-gateway.labels" . | nindent 4 }}
+data:
+  gateway.toml: |
+    [server]
+    host = {{ .Values.config.host | quote }}
+    port = {{ .Values.config.port }}
+    worker_threads = {{ .Values.config.workerThreads }}
+
+    [cache]
+    enabled = {{ .Values.config.cacheEnabled }}
+    max_hot_memory_mb = {{ .Values.config.maxHotMemoryMb }}
+    default_ttl_secs = 300

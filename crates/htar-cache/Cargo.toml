@@ -1,0 +1,18 @@
+[package]
+name = "htar-cache"
+version = "0.1.0"
+edition = "2021"
+description = "High performance in-memory & HTAR archive cache manager for API Gateway"
+
+[dependencies]
+htar-core = { path = "../htar-core" }
+dashmap.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+tracing.workspace = true
+ahash.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3.10"

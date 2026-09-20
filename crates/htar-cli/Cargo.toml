@@ -1,0 +1,22 @@
+[package]
+name = "htar-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Command line interface for HTAR API Gateway, bundle packing, inspection, and benchmarks"
+
+[[bin]]
+name = "htar-gw"
+path = "src/main.rs"
+
+[dependencies]
+htar-core = { path = "../htar-core" }
+htar-cache = { path = "../htar-cache" }
+htar-proxy = { path = "../htar-proxy" }
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+bytes.workspace = true
+reqwest.workspace = true
