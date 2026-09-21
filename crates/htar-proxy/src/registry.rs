@@ -134,6 +134,10 @@ impl Registry {
         })
     }
 
+    pub fn delete_consumer(&self, id: &str) -> bool {
+        self.consumers.remove(id).is_some()
+    }
+
     // --- Path & Method Router with Host Support ---
     pub fn match_request(&self, request_host: &str, method: &str, path: &str) -> Option<(Route, Service)> {
         // Reserved system prefixes must never be matched by dynamic user routes
@@ -219,31 +223,51 @@ impl Registry {
     pub fn start_health_checker(registry: Arc<Self>, interval: Duration) {
         tokio::spawn(async move {
             let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(3))
+                .timeout(Duration::from_secs(2))
                 .build()
                 .unwrap();
 
             loop {
                 tokio::time::sleep(interval).await;
-                for mut entry in registry.services.iter_mut() {
-                    let service = entry.value_mut();
-                    if let Some(health_path) = &service.health_check_path {
-                        for target in &mut service.targets {
-                            let health_url = format!("{}{}", target.url, health_path);
-                            match client.get(&health_url).send().await {
-                                Ok(res) if res.status().is_success() || res.status().is_redirection() || res.status() == reqwest::StatusCode::UNAUTHORIZED || res.status() == reqwest::StatusCode::FORBIDDEN => {
-                                    if !target.is_healthy {
-                                        info!("Upstream target {} for service {} is HEALTHY", target.url, service.name);
-                                    }
-                                    target.is_healthy = true;
-                                }
-                                _ => {
-                                    if target.is_healthy {
-                                        warn!("Upstream target {} for service {} is UNHEALTHY (Health Check Failed)", target.url, service.name);
-                                    }
-                                    target.is_healthy = false;
-                                }
+
+                // 1. Collect targets to check without holding DashMap locks long-term
+                let targets_to_check: Vec<(String, String, String, String)> = registry
+                    .list_services()
+                    .into_iter()
+                    .filter_map(|s| {
+                        let path = s.health_check_path?;
+                        Some(
+                            s.targets
+                                .into_iter()
+                                .map(move |t| (s.id.clone(), s.name.clone(), t.url, path.clone())),
+                        )
+                    })
+                    .flatten()
+                    .collect();
+
+                // 2. Perform async health check requests without holding any registry locks
+                for (service_id, service_name, target_url, health_path) in targets_to_check {
+                    let health_url = format!("{}{}", target_url, health_path);
+                    let is_healthy = match client.get(&health_url).send().await {
+                        Ok(res) => {
+                            res.status().is_success()
+                                || res.status().is_redirection()
+                                || res.status() == reqwest::StatusCode::UNAUTHORIZED
+                                || res.status() == reqwest::StatusCode::FORBIDDEN
+                        }
+                        Err(_) => false,
+                    };
+
+                    // 3. Briefly update status in registry
+                    if let Some(mut entry) = registry.services.get_mut(&service_id) {
+                        let service = entry.value_mut();
+                        if let Some(target) = service.targets.iter_mut().find(|t| t.url == target_url) {
+                            if is_healthy && !target.is_healthy {
+                                info!("Upstream target {} for service {} is HEALTHY", target_url, service_name);
+                            } else if !is_healthy && target.is_healthy {
+                                warn!("Upstream target {} for service {} is UNHEALTHY (Health Check Failed)", target_url, service_name);
                             }
+                            target.is_healthy = is_healthy;
                         }
                     }
                 }

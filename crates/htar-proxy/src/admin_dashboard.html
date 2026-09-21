@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTAR Enterprise API Gateway - Admin Control Plane</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            500: '#06b6d4',
+                            600: '#0891b2',
+                            900: '#164e63',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        code, pre { font-family: 'JetBrains Mono', monospace; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-cyan-500/20">
+                    <i class="fa-solid fa-bolt text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">HTAR Gateway</h1>
+                    <p class="text-xs text-slate-400">Enterprise Control Plane</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                <!-- UI Auth Enable/Disable Toggle Switch -->
+                <button onclick="toggleAuthEnforcement()" id="auth-toggle-btn" class="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded-lg text-xs transition">
+                    <span class="text-slate-400 font-medium">Auth Protection:</span>
+                    <span id="auth-toggle-status" class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ENFORCED</span>
+                </button>
+
+                <!-- User Profile & RBAC Badge -->
+                <div onclick="showLoginScreen()" id="rbac-user-badge" class="flex items-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 px-3 py-1.5 rounded-full text-xs transition cursor-pointer">
+                    <i class="fa-solid fa-user-shield text-cyan-400"></i>
+                    <span id="user-display" class="font-semibold text-slate-200">admin</span>
+                    <span id="role-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">SuperAdmin</span>
+                </div>
+
+                <span class="inline-flex items-center gap-x-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Cluster Healthy
+                </span>
+
+                <button onclick="refreshData()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-arrows-rotate" id="refresh-icon"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Dedicated Full-Page Internal Authentication View -->
+    <div id="auth-login-screen" class="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div class="max-w-md w-full space-y-8 bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl">
+            <div class="text-center space-y-3">
+                <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white mx-auto font-bold text-2xl shadow-xl shadow-cyan-500/30">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <h2 class="text-2xl font-extrabold text-slate-100">Edge Gateway Auth Portal</h2>
+                <p class="text-xs text-slate-400">Internal UI-based Authentication & Multi-Tenant Role Verification</p>
+            </div>
+
+            <!-- Identity Preset Cards -->
+            <div class="space-y-3">
+                <p class="text-xs text-slate-400 font-semibold uppercase tracking-wider text-center">Select Role Identity Preset to Login</p>
+                <div class="grid grid-cols-1 gap-2.5">
+                    <button type="button" onclick="loginPreset('admin', 'admin_secret_pass_2026')" class="p-3 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-xl text-left transition flex justify-between items-center group">
+                        <div>
+                            <div class="font-bold text-xs text-purple-300">SuperAdmin Identity</div>
+                            <div class="text-[11px] text-slate-400">user: admin | env: HTAR_ADMIN_PASSWORD (Full Rights)</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-purple-400 group-hover:translate-x-1 transition text-xs"></i>
+                    </button>
+
+                    <button type="button" onclick="loginPreset('operator', 'op_secret_pass_2026')" class="p-3 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl text-left transition flex justify-between items-center group">
+                        <div>
+                            <div class="font-bold text-xs text-cyan-300">Operator Identity</div>
+                            <div class="text-[11px] text-slate-400">user: operator | env: HTAR_OPERATOR_PASSWORD (Switchboard & Routes)</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-cyan-400 group-hover:translate-x-1 transition text-xs"></i>
+                    </button>
+
+                    <button type="button" onclick="loginPreset('viewer', 'view_secret_pass_2026')" class="p-3 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-xl text-left transition flex justify-between items-center group">
+                        <div>
+                            <div class="font-bold text-xs text-slate-200">Viewer Identity</div>
+                            <div class="text-[11px] text-slate-400">user: viewer | env: HTAR_VIEWER_PASSWORD (Read-Only Telemetry)</div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-slate-400 group-hover:translate-x-1 transition text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="relative flex py-2 items-center">
+                <div class="flex-grow border-t border-slate-800"></div>
+                <span class="flex-shrink mx-4 text-[11px] text-slate-500 uppercase tracking-widest font-mono">Or Manual Login</span>
+                <div class="flex-grow border-t border-slate-800"></div>
+            </div>
+
+            <form id="standalone-login-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Username</label>
+                    <input type="text" id="custom-user" value="admin" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
+                    <input type="password" id="custom-pass" value="admin_secret_pass_2026" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:border-cyan-500 focus:outline-none" required>
+                </div>
+                <div id="standalone-err" class="hidden text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-lg text-center"></div>
+                <button type="submit" class="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-lg transition">
+                    Sign In & Authenticate Session
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Control Plane Dashboard -->
+    <div id="dashboard-content" class="hidden flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Services</p>
+                        <h3 class="text-3xl font-bold text-slate-100 mt-2" id="metric-services">0</h3>
+                    </div>
+                    <div class="p-3 bg-cyan-500/10 rounded-lg text-cyan-400">
+                        <i class="fa-solid fa-server text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Routes</p>
+                        <h3 class="text-3xl font-bold text-slate-100 mt-2" id="metric-routes">0</h3>
+                    </div>
+                    <div class="p-3 bg-blue-500/10 rounded-lg text-blue-400">
+                        <i class="fa-solid fa-route text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cache Hits / Misses</p>
+                        <h3 class="text-3xl font-bold text-slate-100 mt-2" id="metric-cache">0 / 0</h3>
+                    </div>
+                    <div class="p-3 bg-purple-500/10 rounded-lg text-purple-400">
+                        <i class="fa-solid fa-memory text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Wasm Plugins</p>
+                        <h3 class="text-3xl font-bold text-slate-100 mt-2" id="metric-plugins">0</h3>
+                    </div>
+                    <div class="p-3 bg-amber-500/10 rounded-lg text-amber-400">
+                        <i class="fa-solid fa-cubes text-xl"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Monthly ROI Savings</p>
+                        <h3 class="text-3xl font-bold text-emerald-400 mt-2" id="metric-roi">$16,538</h3>
+                    </div>
+                    <div class="p-3 bg-emerald-500/10 rounded-lg text-emerald-400">
+                        <i class="fa-solid fa-sack-dollar text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="border-b border-slate-800 flex space-x-8 text-sm font-medium overflow-x-auto">
+            <button onclick="switchTab('endpoints')" id="tab-btn-endpoints" class="tab-btn border-b-2 border-cyan-400 text-cyan-400 pb-3 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-network-wired"></i> Auto-Discovered Endpoints
+            </button>
+            <button onclick="switchTab('switchboard')" id="tab-btn-switchboard" class="tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-sliders"></i> Gateway API Switchboard
+            </button>
+            <button onclick="switchTab('roi')" id="tab-btn-roi" class="tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-chart-line"></i> Financial ROI Telemetry
+            </button>
+            <button onclick="switchTab('identity')" id="tab-btn-identity" class="tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-users-gear"></i> Identity & RBAC Users (MySQL)
+            </button>
+            <button onclick="switchTab('services')" id="tab-btn-services" class="tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-server"></i> Services
+            </button>
+            <button onclick="switchTab('routes')" id="tab-btn-routes" class="tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-route"></i> Routes
+            </button>
+            <button onclick="switchTab('wasm')" id="tab-btn-wasm" class="tab-btn border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-3 flex items-center gap-2 whitespace-nowrap">
+                <i class="fa-solid fa-cube"></i> Wasm Plugins
+            </button>
+        </div>
+
+        <!-- Tab Content: Endpoints -->
+        <div id="tab-endpoints" class="tab-content space-y-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+                    <h2 class="text-sm font-semibold text-slate-200">Kubernetes & Static Gateway Endpoints</h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-300">
+                        <thead class="bg-slate-950/50 text-xs uppercase text-slate-400 border-b border-slate-800">
+                            <tr>
+                                <th class="px-6 py-3">Route ID</th>
+                                <th class="px-6 py-3">Path</th>
+                                <th class="px-6 py-3">Host Match</th>
+                                <th class="px-6 py-3">Upstream Target</th>
+                                <th class="px-6 py-3">Health Status</th>
+                                <th class="px-6 py-3">Cache Mode</th>
+                            </tr>
+                        </thead>
+                        <tbody id="endpoints-table-body" class="divide-y divide-slate-800/50">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Task 5.4 Low-Code Gateway API Switchboard -->
+        <div id="tab-switchboard" class="tab-content space-y-4 hidden">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-100">Low-Code Gateway API Switchboard Engine</h2>
+                        <p class="text-xs text-slate-400 mt-1">Live toggle routing policies, HTAR O(1) zero-copy caching, and CNCF HTTPRoute reconciliation status.</p>
+                    </div>
+                    <span class="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                        <i class="fa-solid fa-sync fa-spin mr-1"></i> GitOps Sync Active
+                    </span>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-300">
+                        <thead class="bg-slate-950/50 text-xs uppercase text-slate-400 border-b border-slate-800">
+                            <tr>
+                                <th class="px-6 py-3">Route / Service</th>
+                                <th class="px-6 py-3">Paths</th>
+                                <th class="px-6 py-3">CNCF Gateway API Status</th>
+                                <th class="px-6 py-3">Switchboard Execution Mode</th>
+                                <th class="px-6 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="switchboard-table-body" class="divide-y divide-slate-800/50">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Task 5.3 Financial ROI Calculator Telemetry -->
+        <div id="tab-roi" class="tab-content space-y-6 hidden">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
+                <div>
+                    <h2 class="text-base font-bold text-slate-100">Financial ROI Telemetry Calculator</h2>
+                    <p class="text-xs text-slate-400 mt-1">Real-time financial savings generated by HTAR zero-copy hashtable lookup & eBPF/XDP driver-level packet drop.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-2">
+                        <p class="text-xs text-slate-400 font-medium">Monthly Cloud Egress Savings</p>
+                        <h4 class="text-2xl font-bold text-emerald-400" id="roi-egress-savings">$9,188</h4>
+                        <p class="text-xs text-slate-500">Based on 114,852 GB zstd payload compression & local cache hits</p>
+                    </div>
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-2">
+                        <p class="text-xs text-slate-400 font-medium">Monthly Server Compute Savings</p>
+                        <h4 class="text-2xl font-bold text-cyan-400" id="roi-compute-savings">$7,350</h4>
+                        <p class="text-xs text-slate-500">Based on eBPF XDP_DROP & XDP_TX driver probe fast bouncing</p>
+                    </div>
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-2">
+                        <p class="text-xs text-slate-400 font-medium">Projected Annual ROI</p>
+                        <h4 class="text-2xl font-bold text-purple-400" id="roi-annual-savings">$198,458</h4>
+                        <p class="text-xs text-slate-500">Total net operational efficiency return (98.4% latency reduction)</p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5 font-mono text-xs text-slate-300 space-y-2">
+                    <p class="text-cyan-400 font-bold">// HTAR Enterprise Telemetry Breakdown</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 text-slate-400">
+                        <div>RPS Throughput: <span class="text-slate-100 font-semibold" id="roi-rps">12,500</span></div>
+                        <div>Cache Hit Ratio: <span class="text-slate-100 font-semibold" id="roi-hit-ratio">88.5%</span></div>
+                        <div>P99 Transit Latency: <span class="text-slate-100 font-semibold" id="roi-latency">620 µs</span></div>
+                        <div>Monthly Requests: <span class="text-slate-100 font-semibold" id="roi-monthly-reqs">32.4B</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Task 5.5/5.6 Identity & Multi-Tenant RBAC Users (MySQL) -->
+        <div id="tab-identity" class="tab-content space-y-4 hidden">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-200">Identity & Multi-Tenant Role-Based Access Control (RBAC)</h2>
+                    <p class="text-xs text-slate-400">Persisted in MySQL Cluster Database (<code class="text-cyan-400">htargw_db.users</code> at <code class="text-slate-300">mysql.dev-tools.svc.cluster.local:3306</code>)</p>
+                </div>
+                <button onclick="toggleModal('modal-add-user')" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow transition">
+                    + Provision New User
+                </button>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-300">
+                        <thead class="bg-slate-950/50 text-xs uppercase text-slate-400 border-b border-slate-800">
+                            <tr>
+                                <th class="px-6 py-3">Username</th>
+                                <th class="px-6 py-3">Role Scope</th>
+                                <th class="px-6 py-3">Assigned Permissions</th>
+                                <th class="px-6 py-3">MySQL Persistence Engine</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body" class="divide-y divide-slate-800/50">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Services -->
+        <div id="tab-services" class="tab-content space-y-4 hidden">
+            <div class="flex justify-between items-center">
+                <h2 class="text-sm font-semibold text-slate-200">Registered Services</h2>
+                <button onclick="toggleModal('modal-add-service')" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow transition">
+                    + Register New Service
+                </button>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-300">
+                        <thead class="bg-slate-950/50 text-xs uppercase text-slate-400 border-b border-slate-800">
+                            <tr>
+                                <th class="px-6 py-3">Service ID</th>
+                                <th class="px-6 py-3">Name</th>
+                                <th class="px-6 py-3">Upstream Targets</th>
+                                <th class="px-6 py-3">Health Check Path</th>
+                            </tr>
+                        </thead>
+                        <tbody id="services-table-body" class="divide-y divide-slate-800/50">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Routes -->
+        <div id="tab-routes" class="tab-content space-y-4 hidden">
+            <div class="flex justify-between items-center">
+                <h2 class="text-sm font-semibold text-slate-200">Routing Rules</h2>
+                <button onclick="toggleModal('modal-add-route')" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow transition">
+                    + Add New Route
+                </button>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-300">
+                        <thead class="bg-slate-950/50 text-xs uppercase text-slate-400 border-b border-slate-800">
+                            <tr>
+                                <th class="px-6 py-3">Route ID</th>
+                                <th class="px-6 py-3">Paths</th>
+                                <th class="px-6 py-3">Target Service</th>
+                                <th class="px-6 py-3">Strip Path</th>
+                                <th class="px-6 py-3">Cache TTL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="routes-table-body" class="divide-y divide-slate-800/50">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Content: Wasm -->
+        <div id="tab-wasm" class="tab-content space-y-4 hidden">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+                <h2 class="text-sm font-semibold text-slate-200">Deploy WebAssembly (.wasm) Middleware Plugin</h2>
+                <form id="wasm-upload-form" class="space-y-4">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Plugin Name</label>
+                        <input type="text" id="wasm-name" placeholder="e.g. custom-auth-validator" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-cyan-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Select .wasm File</label>
+                        <input type="file" id="wasm-file" accept=".wasm" class="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 cursor-pointer" required>
+                    </div>
+                    <button type="submit" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold shadow">Upload & Hot-Compile Wasm Plugin</button>
+                </form>
+                <div id="wasm-status" class="hidden text-xs p-3 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Modal: Register Service -->
+    <div id="modal-add-service" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4">
+            <h3 class="text-base font-semibold text-slate-200">Register New Upstream Service</h3>
+            <form id="form-service" class="space-y-3">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Service Name</label>
+                    <input type="text" id="svc-name" placeholder="payment-service" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Upstream URL</label>
+                    <input type="url" id="svc-url" placeholder="http://payment-svc.default.svc.cluster.local:8080" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Health Check Path</label>
+                    <input type="text" id="svc-health" value="/_health" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200">
+                </div>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="toggleModal('modal-add-service')" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-medium">Cancel</button>
+                    <button type="submit" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold">Save Service</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Add Route -->
+    <div id="modal-add-route" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4">
+            <h3 class="text-base font-semibold text-slate-200">Add New Routing Rule</h3>
+            <form id="form-route" class="space-y-3">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Target Service ID</label>
+                    <input type="text" id="route-svc-id" placeholder="service_id" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Paths (comma separated)</label>
+                    <input type="text" id="route-paths" placeholder="/api/v1/payments, /v1/pay" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200" required>
+                </div>
+                <div class="flex items-center space-x-4 pt-1">
+                    <label class="flex items-center space-x-2 text-xs text-slate-300">
+                        <input type="checkbox" id="route-strip-path" checked class="rounded bg-slate-950 border-slate-800 text-cyan-600">
+                        <span>Strip Path Prefix</span>
+                    </label>
+                    <label class="flex items-center space-x-2 text-xs text-slate-300">
+                        <input type="checkbox" id="route-enable-cache" checked class="rounded bg-slate-950 border-slate-800 text-cyan-600">
+                        <span>Enable HTAR O(1) Cache</span>
+                    </label>
+                </div>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="toggleModal('modal-add-route')" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-medium">Cancel</button>
+                    <button type="submit" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold">Save Route</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Add User -->
+    <div id="modal-add-user" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center z-50">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4">
+            <h3 class="text-base font-semibold text-slate-200">Provision New RBAC User</h3>
+            <form id="form-user" class="space-y-3">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Username</label>
+                    <input type="text" id="user-name" placeholder="secops-admin" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Password</label>
+                    <input type="password" id="user-pass" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">Role Scope</label>
+                    <select id="user-role" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200">
+                        <option value="Operator">Operator (Routes, Services, Switchboard)</option>
+                        <option value="SuperAdmin">SuperAdmin (Full Control)</option>
+                        <option value="Viewer">Viewer (Read-Only Telemetry)</option>
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="toggleModal('modal-add-user')" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-medium">Cancel</button>
+                    <button type="submit" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold">Save & Sync to MySQL</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript Control Plane Logic -->
+    <script>
+        function setText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.innerText = text;
+        }
+
+        async function fetchAPI(endpoint, options = {}) {
+            try {
+                const res = await fetch(endpoint, options);
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (err) {
+                console.error("API Error:", err);
+                return null;
+            }
+        }
+
+        async function toggleAuthEnforcement() {
+            await fetch('/admin/v1/auth/toggle', { method: 'POST' });
+            refreshData();
+        }
+
+        function showLoginScreen() {
+            document.getElementById('auth-login-screen').classList.remove('hidden');
+            document.getElementById('dashboard-content').classList.add('hidden');
+        }
+
+        function showDashboard() {
+            document.getElementById('auth-login-screen').classList.add('hidden');
+            document.getElementById('dashboard-content').classList.remove('hidden');
+        }
+
+        async function loginPreset(username, password) {
+            const res = await fetch('/admin/v1/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (res.ok && data.status === "authenticated") {
+                showDashboard();
+                refreshData();
+            } else {
+                const errDiv = document.getElementById('standalone-err');
+                if (errDiv) {
+                    errDiv.classList.remove('hidden');
+                    errDiv.innerText = data.error || "Authentication failed";
+                }
+            }
+        }
+
+        async function refreshData() {
+            const icon = document.getElementById('refresh-icon');
+            if (icon) icon.classList.add('animate-spin');
+
+            try {
+                const authStatus = await fetchAPI('/admin/v1/auth/status');
+                const toggleStatusEl = document.getElementById('auth-toggle-status');
+                
+                if (authStatus) {
+                    if (toggleStatusEl) {
+                        if (authStatus.auth_enabled) {
+                            toggleStatusEl.innerText = "ENFORCED";
+                            toggleStatusEl.className = "px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                        } else {
+                            toggleStatusEl.innerText = "BYPASSED";
+                            toggleStatusEl.className = "px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                        }
+                    }
+
+                    if (authStatus.user) {
+                        setText('user-display', authStatus.user.username);
+                        setText('role-badge', authStatus.user.role);
+                    }
+
+                    // If Auth is enabled & user is unauthenticated, show dedicated login page
+                    if (authStatus.auth_enabled && (!authStatus.authenticated || authStatus.user.role === "Guest")) {
+                        showLoginScreen();
+                        return;
+                    } else {
+                        showDashboard();
+                    }
+                }
+
+                const overview = await fetchAPI('/admin/v1/overview');
+                const health = await fetchAPI('/_htar/health');
+                const endpoints = await fetchAPI('/admin/v1/endpoints');
+                const services = await fetchAPI('/admin/v1/services');
+                const routes = await fetchAPI('/admin/v1/routes');
+                const roi = await fetchAPI('/admin/v1/roi');
+                const switchboard = await fetchAPI('/admin/v1/switchboard');
+                const users = await fetchAPI('/admin/v1/users');
+
+                if (overview) {
+                    setText('metric-services', overview.services_count || 0);
+                    setText('metric-routes', overview.routes_count || 0);
+                    setText('metric-plugins', overview.plugins_count || 0);
+                }
+
+                if (health && health.cache) {
+                    setText('metric-cache', `${health.cache.hits} / ${health.cache.misses}`);
+                }
+
+                if (roi) {
+                    setText('metric-roi', `$${(roi.total_monthly_savings_usd || 0).toLocaleString()}`);
+                    setText('roi-egress-savings', `$${(roi.monthly_egress_savings_usd || 0).toLocaleString()}`);
+                    setText('roi-compute-savings', `$${(roi.monthly_compute_savings_usd || 0).toLocaleString()}`);
+                    setText('roi-annual-savings', `$${(roi.projected_annual_roi_usd || 0).toLocaleString()}`);
+                    setText('roi-rps', (roi.throughput_rps || 0).toLocaleString());
+                    setText('roi-hit-ratio', `${roi.ht_cache_hit_ratio_percent || 0}%`);
+                    setText('roi-latency', `${roi.p99_proxy_transit_latency_us || 0} µs`);
+                }
+
+                if (endpoints && endpoints.endpoints) {
+                    renderEndpoints(endpoints.endpoints);
+                }
+
+                if (services && services.services) {
+                    renderServices(services.services);
+                }
+
+                if (routes && routes.routes) {
+                    renderRoutes(routes.routes);
+                }
+
+                if (switchboard && switchboard.entries) {
+                    renderSwitchboard(switchboard.entries);
+                }
+
+                if (users && users.users) {
+                    renderUsers(users.users);
+                }
+            } catch (err) {
+                console.error("Refresh error:", err);
+            } finally {
+                if (icon) setTimeout(() => icon.classList.remove('animate-spin'), 500);
+            }
+        }
+
+        function renderUsers(list) {
+            const tbody = document.getElementById('users-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = list.map(u => `
+                <tr class="hover:bg-slate-800/30">
+                    <td class="px-6 py-4 font-mono text-xs text-cyan-400 font-bold">${u.username}</td>
+                    <td class="px-6 py-4 text-xs">
+                        <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold ${u.role === 'SuperAdmin' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : (u.role === 'Operator' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'bg-slate-700 text-slate-300')}">
+                            ${u.role}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-300">${(u.permissions || []).join(', ')}</td>
+                    <td class="px-6 py-4 text-xs text-emerald-400 flex items-center gap-1.5">
+                        <i class="fa-solid fa-database text-[10px]"></i> ${u.mysql_storage_status || 'htargw_db.users'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderEndpoints(list) {
+            const tbody = document.getElementById('endpoints-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = list.map(e => `
+                <tr class="hover:bg-slate-800/30">
+                    <td class="px-6 py-4 font-mono text-xs text-cyan-400">${e.route_id}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-100">${(e.paths || []).join(', ')}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-400">${(e.hosts || []).join(', ')}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-300">${(e.upstreams || []).map(u => u.url).join('<br>')}</td>
+                    <td class="px-6 py-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${e.healthy ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}">
+                            ${e.healthy ? 'HEALTHY' : 'UNHEALTHY'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-xs font-mono text-slate-400">${e.cache_enabled ? 'Enabled (' + (e.cache_ttl_secs || 60) + 's)' : 'Disabled'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderSwitchboard(entries) {
+            const tbody = document.getElementById('switchboard-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = entries.map(s => `
+                <tr class="hover:bg-slate-800/30">
+                    <td class="px-6 py-4 font-mono text-xs text-cyan-400 font-bold">${s.route_id}<br><span class="text-slate-400 font-normal">${s.service_name}</span></td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-100">${(s.paths || []).join(', ')}</td>
+                    <td class="px-6 py-4 text-xs">
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            ${s.gateway_api_status}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-xs font-mono text-purple-300">${s.switchboard_mode}</td>
+                    <td class="px-6 py-4 text-right">
+                        <button onclick="toggleSwitchboard('${s.route_id}')" class="px-3 py-1 rounded text-xs font-semibold ${s.cache_enabled ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'}">
+                            ${s.cache_enabled ? 'Disable Cache' : 'Enable O(1) Cache'}
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function toggleSwitchboard(routeId) {
+            await fetch('/admin/v1/switchboard/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ route_id: routeId })
+            });
+            refreshData();
+        }
+
+        function renderServices(list) {
+            const tbody = document.getElementById('services-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = list.map(s => `
+                <tr class="hover:bg-slate-800/30">
+                    <td class="px-6 py-4 font-mono text-xs text-cyan-400">${s.id}</td>
+                    <td class="px-6 py-4 font-semibold text-slate-200">${s.name}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-300">${(s.targets || []).map(t => t.url).join(', ')}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-400">${s.health_check_path || '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderRoutes(list) {
+            const tbody = document.getElementById('routes-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = list.map(r => `
+                <tr class="hover:bg-slate-800/30">
+                    <td class="px-6 py-4 font-mono text-xs text-cyan-400">${r.id}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-100">${(r.paths || []).join(', ')}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-300">${r.service_id}</td>
+                    <td class="px-6 py-4 text-xs">${r.strip_path ? 'Yes' : 'No'}</td>
+                    <td class="px-6 py-4 text-xs font-mono">${r.cache_ttl_secs ? r.cache_ttl_secs + 's' : 'No Cache'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function switchTab(name) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('border-cyan-400', 'text-cyan-400');
+                el.classList.add('border-transparent', 'text-slate-400');
+            });
+
+            const tabEl = document.getElementById(`tab-${name}`);
+            if (tabEl) tabEl.classList.remove('hidden');
+            const btn = document.getElementById(`tab-btn-${name}`);
+            if (btn) {
+                btn.classList.add('border-cyan-400', 'text-cyan-400');
+                btn.classList.remove('border-transparent', 'text-slate-400');
+            }
+        }
+
+        function toggleModal(id) {
+            const modal = document.getElementById(id);
+            if (modal) modal.classList.toggle('hidden');
+        }
+
+        const routeForm = document.getElementById('form-route');
+        if (routeForm) {
+            routeForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const svcId = document.getElementById('route-svc-id').value;
+                const pathsRaw = document.getElementById('route-paths').value;
+                const stripPath = document.getElementById('route-strip-path').checked;
+                const enableCache = document.getElementById('route-enable-cache').checked;
+
+                const paths = pathsRaw.split(',').map(p => p.trim()).filter(p => p.length > 0);
+
+                await fetch('/admin/v1/routes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: '',
+                        service_id: svcId,
+                        hosts: [],
+                        paths: paths,
+                        methods: [],
+                        strip_path: stripPath,
+                        enable_cache: enableCache,
+                        cache_ttl_secs: enableCache ? 60 : null
+                    })
+                });
+
+                toggleModal('modal-add-route');
+                refreshData();
+            });
+        }
+
+        const userForm = document.getElementById('form-user');
+        if (userForm) {
+            userForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('user-name').value;
+                const password = document.getElementById('user-pass').value;
+                const role = document.getElementById('user-role').value;
+
+                await fetch('/admin/v1/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, role })
+                });
+
+                toggleModal('modal-add-user');
+                refreshData();
+            });
+        }
+
+        const standaloneForm = document.getElementById('standalone-login-form');
+        if (standaloneForm) {
+            standaloneForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const user = document.getElementById('custom-user').value;
+                const pass = document.getElementById('custom-pass').value;
+                await loginPreset(user, pass);
+            });
+        }
+
+        // Initial Load
+        refreshData();
+        setInterval(refreshData, 5000);
+    </script>
+</body>
+</html>

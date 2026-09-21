@@ -21,6 +21,7 @@ pub struct GatewayServer {
     config: GatewayConfig,
     registry: Arc<Registry>,
     plugins: Arc<PluginPipeline>,
+    wasm_engine: Arc<crate::wasm_engine::WasmPluginEngine>,
     admin_api: Arc<AdminApi>,
     cache: Arc<HtarCacheManager>,
     http_client: reqwest::Client,
@@ -30,7 +31,8 @@ impl GatewayServer {
     pub fn new(config: GatewayConfig) -> Self {
         let registry = Arc::new(Registry::new());
         let plugins = Arc::new(PluginPipeline::new());
-        let admin_api = Arc::new(AdminApi::new(registry.clone(), plugins.clone()));
+        let wasm_engine = Arc::new(crate::wasm_engine::WasmPluginEngine::new().expect("Failed to initialize Wasm engine"));
+        let admin_api = Arc::new(AdminApi::new(registry.clone(), plugins.clone(), wasm_engine.clone()));
 
         // Populate initial static routes from config into dynamic registry
         for route_cfg in &config.routes {
@@ -71,6 +73,9 @@ impl GatewayServer {
         // Start Kubernetes Auto-Discovery Controller (watching Services and Ingresses)
         crate::k8s_controller::K8sController::start_auto_discovery(registry.clone());
 
+        // Start CNCF Kubernetes Gateway API v1.x Controller
+        crate::gateway_api::GatewayApiController::start_gateway_api_watcher(registry.clone());
+
         let mut cache = HtarCacheManager::new();
         if let Some(path) = &config.cache.htar_bundle_path {
             if let Err(e) = cache.load_archive(path) {
@@ -89,6 +94,7 @@ impl GatewayServer {
             config,
             registry,
             plugins,
+            wasm_engine,
             admin_api,
             cache: Arc::new(cache),
             http_client,
@@ -130,7 +136,16 @@ impl GatewayServer {
                     .serve_connection(io, service)
                     .await
                 {
-                    error!("Error serving connection from {}: {:?}", remote_addr, err);
+                    let err_str = err.to_string();
+                    if err_str.contains("IncompleteMessage")
+                        || err_str.contains("connection closed")
+                        || err_str.contains("connection reset")
+                        || err_str.contains("broken pipe")
+                    {
+                        tracing::debug!("Client connection from {} closed early: {}", remote_addr, err);
+                    } else {
+                        error!("Error serving connection from {}: {:?}", remote_addr, err);
+                    }
                 }
             });
         }
@@ -145,8 +160,8 @@ impl GatewayServer {
         let path = req.uri().path().to_string();
         let req_host = req.headers().get("host").and_then(|h| h.to_str().ok()).unwrap_or("*").to_string();
 
-        // 1. Admin Control Plane REST API (/admin/v1/...)
-        if path.starts_with("/admin/v1") {
+        // 1. Admin Control Plane REST API & Web UI Dashboard (/admin/...)
+        if path.starts_with("/admin") {
             return self.admin_api.handle_admin_request(req).await;
         }
 

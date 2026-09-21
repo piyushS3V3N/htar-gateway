@@ -128,6 +128,11 @@ impl HtarCacheManager {
     pub fn clear_hot(&self) {
         self.hot_cache.clear();
     }
+
+    /// Invalidate entries matching a tag/prefix from hot cache
+    pub fn invalidate_tag(&self, tag: &str) {
+        self.hot_cache.retain(|key, _| !key.contains(tag));
+    }
 }
 
 trait QuickHash {

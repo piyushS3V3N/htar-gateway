@@ -8,6 +8,9 @@ use std::time::Instant;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
+pub mod migrate;
+use migrate::MigrateEngine;
+
 #[derive(Parser)]
 #[command(name = "htar-gw")]
 #[command(about = "HTAR API Gateway — Ultra-Fast Hybrid TAR Hashtable Gateway", long_about = None)]
@@ -56,6 +59,18 @@ enum Commands {
         /// Base URL of HTAR Gateway server (e.g. http://127.0.0.1:8443 or http://172.21.0.3:8088)
         #[arg(short, long, default_value = "http://127.0.0.1:8443")]
         server: String,
+    },
+    /// Migrate legacy Layer7 XML or Kong JSON bundles to HTAR Gateway format, Wasm guests & Gateway API CRDs
+    Migrate {
+        /// Path to input Layer7 XML policy file or Kong JSON bundle
+        #[arg(short, long)]
+        input: PathBuf,
+        /// Directory to output generated Wasm guest bytecode modules
+        #[arg(short, long, default_value = "dist/wasm")]
+        wasm_dir: PathBuf,
+        /// Path to output CNCF Gateway API CRD YAML
+        #[arg(short, long, default_value = "dist/gateway-api-routes.yaml")]
+        crd_output: PathBuf,
     },
 }
 
@@ -189,6 +204,37 @@ async fn main() -> anyhow::Result<()> {
                 );
             }
             println!("===============================================================================================================================");
+        }
+        Commands::Migrate {
+            input,
+            wasm_dir,
+            crd_output,
+        } => {
+            println!("=================================================================================");
+            println!(" HTAR Migration Engine — Tasks 6.1, 6.2 & 6.3 Automation");
+            println!("=================================================================================");
+            println!(" Ingesting bundle from input file : {:?}", input);
+
+            let mut bundle = MigrateEngine::parse_input_bundle(&input)?;
+            println!(" Successfully parsed legacy config bundle:");
+            println!("   - Services extracted : {}", bundle.services.len());
+            println!("   - Routes extracted   : {}", bundle.routes.len());
+            println!("   - Consumers extracted: {}", bundle.consumers.len());
+            println!("   - Plugins extracted  : {}", bundle.plugins.len());
+
+            println!("\n Task 5.2: Generating eBPF XDP Driver Map C rules & Wasm targets...");
+            MigrateEngine::generate_wasm_target(&mut bundle, &wasm_dir)?;
+            MigrateEngine::generate_ebpf_xdp_maps(&bundle, &PathBuf::from("dist/ebpf"))?;
+
+            println!("\n Task 6.3: Generating CNCF Gateway API CRDs...");
+            MigrateEngine::generate_gateway_api_crds(&bundle, &crd_output)?;
+
+            println!("---------------------------------------------------------------------------------");
+            println!(" Migration complete!");
+            println!("   - Wasm output directory : {:?}", wasm_dir);
+            println!("   - eBPF map directory    : dist/ebpf");
+            println!("   - Gateway API CRD output: {:?}", crd_output);
+            println!("=================================================================================");
         }
     }
 

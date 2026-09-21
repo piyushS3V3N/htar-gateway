@@ -1,18 +1,30 @@
 pub mod admin;
 pub mod config;
+pub mod ebpf_loader;
+pub mod gateway_api;
+pub mod gossip;
 pub mod k8s_controller;
+pub mod mysql_storage;
 pub mod plugins;
+pub mod raft_consensus;
 pub mod registry;
 pub mod router;
 pub mod server;
+pub mod wasm_engine;
 
 pub use admin::AdminApi;
 pub use config::GatewayConfig;
+pub use ebpf_loader::EbpfXdpManager;
+pub use gateway_api::GatewayApiController;
+pub use gossip::GossipClusterManager;
 pub use k8s_controller::K8sController;
+pub use mysql_storage::{MysqlConfig, MysqlStorageEngine};
 pub use plugins::{PluginInstance, PluginPipeline, PluginType};
+pub use raft_consensus::{RaftCommand, RaftConsensusManager, RaftResponse};
 pub use registry::{Consumer, Registry, Route, Service, UpstreamTarget};
 pub use router::Router;
 pub use server::GatewayServer;
+pub use wasm_engine::WasmPluginEngine;
 
 #[cfg(test)]
 mod tests {
