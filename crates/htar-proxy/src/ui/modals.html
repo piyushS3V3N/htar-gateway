@@ -1,0 +1,100 @@
+<!-- 9. MODAL DIALOGS -->
+<!-- K8s Token Modal -->
+<div id="modal-k8s-token" class="hidden fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-6 shadow-2xl">
+        <div class="flex justify-between items-center border-b border-zinc-800 pb-4">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-dharmachakra text-emerald-400"></i>
+                <h3 class="text-xs font-bold text-zinc-100 font-mono uppercase tracking-wider">K8s Bearer Token</h3>
+            </div>
+            <button onclick="toggleModal('modal-k8s-token')" class="text-zinc-400 hover:text-zinc-200">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="space-y-3 font-mono">
+            <p class="text-xs text-zinc-400 leading-relaxed">
+                Auto-injected ServiceAccount Bearer Token for proxied K8s Dashboard:
+            </p>
+            <div class="bg-zinc-950 border border-zinc-800 p-3 rounded-xl text-[11px] text-emerald-400 break-all max-h-36 overflow-y-auto" id="full-k8s-token-box">
+                eyJhbGciOiJSUzI1NiIsImtpZCI6IkFjUlpMM1pMTXMtQW1YQlprZmNlaW9ac1dYV0N2RnhkRVV0dkszd2ZoREUifQ.eyJhdWQiOlsiaHR0cHM6Ly9rdWJlcm5ldGVzLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWwiLCJrM3MiXSwiZXhwIjoxODIxNTU4MjcyLCJpYXQiOjE3OTAwMjIyNzIsImlzcyI6Imh0dHBzOi8va3ViZXJuZXRlcy5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsIiwianRpIjoiMGM2ZmI1MGQtNzI2Mi00ODE5LWFmZjItOWVjYjQ3NjQ3NjEzIiwia3ViZXJuZXRlcy5pbyI6eyJuYW1lc3BhY2UiOiJodGFyLXN5c3RlbSIsInNlcnZpY2VhY2NvdW50Ijp7Im5hbWUiOiJodGFyLWdhdGV3YXktc2EiLCJ1aWQiOiJiNjljY2JjZi03ZDIxLTQxZDQtYjA4MS0zMzQxM2NhMTAwZGYifX0sIm5iZiI6MTc5MDAyMjI3Miwic3ViIjoic3lzdGVtOnNlcnZpY2VhY2NvdW50Omh0YXItZ2F0ZXdheS1zYSJ9.ndlRELtdSQz7dtt7rOTi_png0ixtOtbe9V3qyc3wom-i6M4V-kUHsoh3_yGLlIdoEp9mqrey_9A-Br_G7Axqf6P-VoMakk59_bZT_AreTtaHsZTJ-JfkPluO8u9gW8LCnlPRPOr-qgoVXU-eq_OIgSQrUfQWkq_qnZ1RPYjTIym-2pPduXQKwtwJ5cgVkSx8o6zb7lyAAbjfgWgbpVNTlPKClkcKqETZe4ITODQ1zLxPZK6uMsydLoBRfpuN66d7CJSSv-swr7AtOXDGNil7Mmi5IVqiuk5nnkqnm9Zo3I2pEMubFCoDK5omituciPLEmz9oZ4JxCBqb5-UbhdKokQ
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 pt-3 border-t border-zinc-800 font-mono">
+            <button onclick="copyK8sToken()" class="px-3.5 py-1.5 rounded-lg text-xs bg-zinc-800 text-zinc-200 hover:bg-zinc-700">
+                <i class="fa-regular fa-copy"></i> Copy Token
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Route Modal -->
+<div id="modal-add-route" class="hidden fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-6 shadow-2xl">
+        <div class="flex justify-between items-center border-b border-zinc-800 pb-4 font-mono">
+            <h3 class="text-xs font-bold text-zinc-100 uppercase tracking-wider">Add Gateway Route</h3>
+            <button onclick="toggleModal('modal-add-route')" class="text-zinc-400 hover:text-zinc-200">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <form id="form-route" class="space-y-4 font-mono">
+            <div>
+                <label class="block text-xs font-semibold text-zinc-300 mb-1">Service ID</label>
+                <input type="text" id="route-svc-id" placeholder="k8s_svc_default_users" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200" required>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-zinc-300 mb-1">Matching Paths</label>
+                <input type="text" id="route-paths" placeholder="/api/v1/custom" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200" required>
+            </div>
+            <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold text-zinc-300">Strip Path Prefix</label>
+                <input type="checkbox" id="route-strip-path" class="w-4 h-4 accent-emerald-500">
+            </div>
+            <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold text-zinc-300">Enable Cache</label>
+                <input type="checkbox" id="route-enable-cache" class="w-4 h-4 accent-emerald-500" checked>
+            </div>
+            <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold text-zinc-300">Enable Auth Enforcement</label>
+                <input type="checkbox" id="route-enable-auth" class="w-4 h-4 accent-emerald-500" checked>
+            </div>
+            <div class="flex justify-end gap-3 pt-3 border-t border-zinc-800">
+                <button type="button" onclick="toggleModal('modal-add-route')" class="px-3.5 py-1.5 rounded-lg text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700">Cancel</button>
+                <button type="submit" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-zinc-950">Save Route</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add User Modal -->
+<div id="modal-add-user" class="hidden fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 space-y-6 shadow-2xl">
+        <div class="flex justify-between items-center border-b border-zinc-800 pb-4 font-mono">
+            <h3 class="text-xs font-bold text-zinc-100 uppercase tracking-wider">Add User Credential (MySQL Identity)</h3>
+            <button onclick="toggleModal('modal-add-user')" class="text-zinc-400 hover:text-zinc-200">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <form id="form-user" class="space-y-4 font-mono">
+            <div>
+                <label class="block text-xs font-semibold text-zinc-300 mb-1">Username</label>
+                <input type="text" id="user-name" placeholder="new_operator" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200" required>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-zinc-300 mb-1">Password</label>
+                <input type="password" id="user-pass" placeholder="••••••••" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200" required autocomplete="new-password">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-zinc-300 mb-1">Role</label>
+                <select id="user-role" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200">
+                    <option value="SuperAdmin">SuperAdmin (Full Control)</option>
+                    <option value="Operator">Operator (Routes & Switchboard)</option>
+                    <option value="Viewer">Viewer (Executive Telemetry)</option>
+                </select>
+            </div>
+            <div class="flex justify-end gap-3 pt-3 border-t border-zinc-800">
+                <button type="button" onclick="toggleModal('modal-add-user')" class="px-3.5 py-1.5 rounded-lg text-xs bg-zinc-800 text-zinc-300 hover:bg-zinc-700">Cancel</button>
+                <button type="submit" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white">Create User & Sync MySQL</button>
+            </div>
+        </form>
+    </div>
+</div>

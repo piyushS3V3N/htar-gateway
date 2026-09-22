@@ -1,0 +1,73 @@
+<!-- 6. VIEW D: ACCESS & IDENTITY PORTAL -->
+<div id="view-identity" class="console-view-panel hidden space-y-8">
+    
+    <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+        <div>
+            <h2 class="text-lg font-bold text-zinc-100 tracking-tight flex items-center gap-2 font-mono">
+                <i class="fa-solid fa-id-card-clip text-purple-400"></i> ACCESS & IDENTITY PORTAL
+            </h2>
+            <p class="text-xs text-zinc-400 mt-0.5 font-mono">Credential provisioning, MySQL user storage, Vault integration, and identity management</p>
+        </div>
+        <div class="flex items-center gap-2 font-mono">
+            <button onclick="syncVault()" id="vault-btn" class="px-3 py-1.5 rounded-lg text-xs bg-zinc-950 border border-zinc-800 text-amber-400 hover:bg-zinc-850 transition flex items-center gap-1.5">
+                <i class="fa-solid fa-vault"></i> Sync Vault
+            </button>
+            <button onclick="toggleModal('modal-add-user')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-zinc-950 transition flex items-center gap-1.5 shadow">
+                <i class="fa-solid fa-user-plus"></i> Add User
+            </button>
+        </div>
+    </div>
+
+    <!-- K8s Dashboard SSO Auto-Token Card -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-center text-emerald-400">
+                    <i class="fa-solid fa-dharmachakra"></i>
+                </div>
+                <div>
+                    <h3 class="text-xs font-bold text-zinc-100 font-mono uppercase tracking-wider">Kubernetes Dashboard SSO</h3>
+                    <p class="text-xs text-zinc-400 mt-0.5 font-mono">ServiceAccount Bearer token auto-injected upstream</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 font-mono">
+                <button onclick="toggleModal('modal-k8s-token')" class="px-3 py-1.5 rounded-lg text-xs bg-zinc-950 border border-zinc-800 text-zinc-300 hover:bg-zinc-850 transition">
+                    View Token
+                </button>
+                <a href="/kubernetes/" target="_blank" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-zinc-950 transition flex items-center gap-1.5">
+                    Launch <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Credential Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div class="px-6 py-4 border-b border-zinc-800 flex justify-between items-center">
+            <div>
+                <h3 class="text-xs font-bold text-zinc-300 uppercase tracking-wider font-mono">Registered Identities (MySQL Provider)</h3>
+                <p class="text-[11px] text-zinc-500 font-mono mt-0.5">Database: <span class="text-amber-400">mysql.dev-tools.svc.cluster.local:3306/htargw_db</span></p>
+            </div>
+            <button onclick="toggleModal('modal-add-user')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white font-mono transition flex items-center gap-1.5">
+                <i class="fa-solid fa-plus"></i> New Identity
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="border-b border-zinc-800 text-[11px] font-mono text-zinc-400 uppercase bg-zinc-950">
+                        <th class="px-6 py-3">Username</th>
+                        <th class="px-6 py-3">Role</th>
+                        <th class="px-6 py-3">Permissions</th>
+                        <th class="px-6 py-3">Identity Store</th>
+                        <th class="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="users-table-body" class="divide-y divide-zinc-800 font-mono text-xs">
+                    <!-- Populated dynamically by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>

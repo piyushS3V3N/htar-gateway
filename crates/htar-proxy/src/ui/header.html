@@ -1,0 +1,45 @@
+<!-- 2. ENTERPRISE CONSOLE NAVBAR -->
+<header id="header-navbar" class="hidden border-b border-zinc-800 bg-zinc-900 sticky top-0 z-40 h-16 flex items-center justify-between px-6 shadow-md">
+    <div class="flex items-center space-x-4">
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="switchView('executive')">
+            <div class="w-9 h-9 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center shadow-inner">
+                <svg viewBox="0 0 100 100" class="w-6 h-6 text-emerald-400 fill-current">
+                    <path d="M50 12 C28 12 16 26 16 46 C16 58 23 68 32 75 L32 86 L42 86 L42 80 L58 80 L58 86 L68 86 L68 75 C77 68 84 58 84 46 C84 26 72 12 50 12 Z M34 42 C29 42 25 38 25 33 C25 28 29 24 34 24 C39 24 43 28 43 33 C43 38 39 42 34 42 Z M66 42 C61 42 57 38 57 33 C57 28 61 24 66 24 C71 24 75 28 75 33 C75 38 71 42 66 42 Z M42 65 L42 58 L58 58 L58 65 Z" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-sm font-bold text-zinc-100 tracking-tight font-mono">
+                    HTAR GATEWAY
+                </h1>
+                <p class="text-[10px] text-zinc-400 font-medium font-mono">Enterprise Control Plane v0.1.0</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="flex items-center space-x-3 font-mono">
+        <!-- Live Request Rate Indicator -->
+        <span class="inline-flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-xs bg-purple-500/10 text-purple-300 border border-purple-500/20">
+            <i class="fa-solid fa-bolt text-[10px] animate-pulse text-purple-400"></i> <span id="header-req-rate">0 req/s</span>
+        </span>
+
+        <!-- Cluster Status Badge -->
+        <span class="inline-flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Nominal
+        </span>
+
+        <!-- Refresh Action -->
+        <button onclick="refreshData()" class="px-3 py-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 text-zinc-300 text-xs border border-zinc-800 transition flex items-center gap-1.5" title="Refresh Console Data">
+            <i class="fa-solid fa-arrows-rotate" id="refresh-icon"></i>
+        </button>
+
+        <!-- User Profile & Sign Out -->
+        <div class="flex items-center gap-2 bg-zinc-950 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs">
+            <i class="fa-solid fa-user-shield text-emerald-400"></i>
+            <span id="user-display" class="font-medium text-zinc-200">admin</span>
+            <span id="role-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20">SuperAdmin</span>
+            <button onclick="logout()" class="ml-2 text-zinc-400 hover:text-rose-400 transition" title="Sign Out">
+                <i class="fa-solid fa-power-off"></i>
+            </button>
+        </div>
+    </div>
+</header>

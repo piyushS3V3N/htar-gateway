@@ -1,0 +1,42 @@
+<!-- 5. VIEW C: POLICY SWITCHBOARD -->
+<div id="view-switchboard" class="console-view-panel hidden space-y-8">
+    
+    <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+        <div>
+            <h2 class="text-lg font-bold text-zinc-100 tracking-tight flex items-center gap-2 font-mono">
+                <i class="fa-solid fa-sliders text-emerald-400"></i> POLICY SWITCHBOARD
+            </h2>
+            <p class="text-xs text-zinc-400 mt-0.5 font-mono">Zero-downtime ArcSwap configuration controls and per-route policy toggles</p>
+        </div>
+        
+        <button onclick="toggleAuthEnforcement()" id="auth-toggle-btn" class="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs font-mono transition hover:bg-zinc-850">
+            <span class="text-zinc-400">Global Auth:</span>
+            <span id="auth-toggle-status" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ENFORCED</span>
+        </button>
+    </div>
+
+    <!-- Per-Route Switchboard Controls Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div class="px-6 py-4 border-b border-zinc-800 flex justify-between items-center">
+            <h3 class="text-xs font-bold text-zinc-300 uppercase tracking-wider font-mono">Per-Route Policy Controls</h3>
+            <span class="text-xs font-mono text-zinc-500">Persisted across reconciliation loops</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="border-b border-zinc-800 text-[11px] font-mono text-zinc-400 uppercase bg-zinc-950">
+                        <th class="px-6 py-3">Route / Service</th>
+                        <th class="px-6 py-3">Matching Path</th>
+                        <th class="px-6 py-3">Gateway API Status</th>
+                        <th class="px-6 py-3">Auth Protection</th>
+                        <th class="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="switchboard-table-body" class="divide-y divide-zinc-800 font-mono text-xs">
+                    <!-- Populated dynamically by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>

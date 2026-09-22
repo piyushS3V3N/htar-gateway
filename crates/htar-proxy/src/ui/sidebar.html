@@ -1,0 +1,50 @@
+<!-- 3. SIDEBAR NAVIGATION -->
+<aside class="w-60 bg-zinc-900 border-r border-zinc-800 flex flex-col justify-between p-4 shrink-0">
+    <div class="space-y-6">
+        <div class="px-3 py-1 border-b border-zinc-800/80 pb-3">
+            <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest font-mono">Control Plane Views</p>
+        </div>
+        <nav class="space-y-1">
+            <button onclick="switchView('executive')" id="nav-btn-executive" class="nav-sidebar-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-mono transition bg-zinc-950 text-emerald-400 border border-emerald-500/30 font-bold shadow-sm">
+                <i class="fa-solid fa-chart-pie text-sm"></i>
+                <span>Executive Telemetry</span>
+            </button>
+
+            <button onclick="switchView('migration')" id="nav-btn-migration" class="nav-sidebar-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-mono text-zinc-400 hover:bg-zinc-850 hover:text-zinc-200 border border-transparent transition">
+                <i class="fa-solid fa-cube text-sm"></i>
+                <span>Wasm Sandbox Hub</span>
+            </button>
+
+            <button onclick="switchView('switchboard')" id="nav-btn-switchboard" class="nav-sidebar-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-mono text-zinc-400 hover:bg-zinc-850 hover:text-zinc-200 border border-transparent transition">
+                <i class="fa-solid fa-sliders text-sm"></i>
+                <span>Policy Switchboard</span>
+            </button>
+
+            <button onclick="switchView('identity')" id="nav-btn-identity" class="nav-sidebar-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-mono text-zinc-400 hover:bg-zinc-850 hover:text-zinc-200 border border-transparent transition">
+                <i class="fa-solid fa-id-card-clip text-sm"></i>
+                <span>Access & Identity</span>
+            </button>
+
+            <button onclick="switchView('telemetry')" id="nav-btn-telemetry" class="nav-sidebar-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-xs font-mono text-zinc-400 hover:bg-zinc-850 hover:text-zinc-200 border border-transparent transition">
+                <i class="fa-solid fa-microchip text-sm"></i>
+                <span>System Engine</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Footer Engine Status Info -->
+    <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 space-y-1.5 font-mono text-[11px]">
+        <div class="flex items-center justify-between">
+            <span class="text-zinc-500">Engine:</span>
+            <span class="text-emerald-400 font-bold">ArcSwap L7</span>
+        </div>
+        <div class="flex items-center justify-between">
+            <span class="text-zinc-500">Wasm:</span>
+            <span class="text-purple-400 font-bold">Wasmtime v21</span>
+        </div>
+        <div class="flex items-center justify-between">
+            <span class="text-zinc-500">MySQL DB:</span>
+            <span class="text-amber-400 font-bold">htargw_db</span>
+        </div>
+    </div>
+</aside>

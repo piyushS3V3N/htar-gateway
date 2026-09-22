@@ -1,0 +1,40 @@
+<!-- 8. VIEW E: SYSTEM ENGINE & SERVICE REGISTRY -->
+<div id="view-telemetry" class="console-view-panel hidden space-y-8">
+    
+    <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+        <div>
+            <h2 class="text-lg font-bold text-zinc-100 tracking-tight flex items-center gap-2 font-mono">
+                <i class="fa-solid fa-microchip text-emerald-400"></i> SYSTEM ENGINE & SERVICE REGISTRY
+            </h2>
+            <p class="text-xs text-zinc-400 mt-0.5 font-mono">Discovered Kubernetes endpoints and proxy target mappings</p>
+        </div>
+    </div>
+
+    <!-- Endpoint Status Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div class="px-6 py-4 border-b border-zinc-800 flex justify-between items-center">
+            <h3 class="text-xs font-bold text-zinc-300 uppercase tracking-wider font-mono">Discovered Service Endpoints</h3>
+            <button onclick="toggleModal('modal-add-route')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-zinc-950 text-xs font-bold font-mono transition">
+                <i class="fa-solid fa-plus"></i> Add Route
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="border-b border-zinc-800 text-[11px] font-mono text-zinc-400 uppercase bg-zinc-950">
+                        <th class="px-6 py-3">Route ID</th>
+                        <th class="px-6 py-3">Matching Paths</th>
+                        <th class="px-6 py-3">Hosts</th>
+                        <th class="px-6 py-3">Upstream Target URL</th>
+                        <th class="px-6 py-3">Health</th>
+                        <th class="px-6 py-3">Cache</th>
+                    </tr>
+                </thead>
+                <tbody id="endpoints-table-body" class="divide-y divide-zinc-800 font-mono text-xs">
+                    <!-- Populated dynamically by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>

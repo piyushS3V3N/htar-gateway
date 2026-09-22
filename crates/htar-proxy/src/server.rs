@@ -24,6 +24,7 @@ pub struct GatewayServer {
     wasm_engine: Arc<crate::wasm_engine::WasmPluginEngine>,
     admin_api: Arc<AdminApi>,
     cache: Arc<HtarCacheManager>,
+    metrics: Arc<crate::admin::ProxyMetrics>,
     http_client: reqwest::Client,
 }
 
@@ -32,7 +33,8 @@ impl GatewayServer {
         let registry = Arc::new(Registry::new());
         let plugins = Arc::new(PluginPipeline::new());
         let wasm_engine = Arc::new(crate::wasm_engine::WasmPluginEngine::new().expect("Failed to initialize Wasm engine"));
-        let admin_api = Arc::new(AdminApi::new(registry.clone(), plugins.clone(), wasm_engine.clone()));
+        let metrics = Arc::new(crate::admin::ProxyMetrics::new());
+        let admin_api = Arc::new(AdminApi::new(registry.clone(), plugins.clone(), wasm_engine.clone(), metrics.clone()));
 
         // Populate initial static routes from config into dynamic registry
         for route_cfg in &config.routes {
@@ -98,6 +100,7 @@ impl GatewayServer {
             wasm_engine,
             admin_api,
             cache: Arc::new(cache),
+            metrics,
             http_client,
         }
     }
@@ -157,6 +160,7 @@ impl GatewayServer {
         req: Request<Incoming>,
         remote_addr: SocketAddr,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+        self.metrics.record_request(512, true);
         let method = req.method().clone();
         let path = req.uri().path().to_string();
         let req_host = req.headers().get("host").and_then(|h| h.to_str().ok()).unwrap_or("*").to_string();
@@ -267,7 +271,7 @@ impl GatewayServer {
                 // If browser navigation (accept header containing text/html), serve the internal Auth Portal UI
                 let accepts_html = req.headers().get("accept").and_then(|h| h.to_str().ok()).map(|a| a.contains("text/html")).unwrap_or(false);
                 if accepts_html && method == Method::GET {
-                    let html = include_str!("admin_dashboard.html");
+                    let html = crate::ui::render_dashboard_html();
                     let mut res = Response::new(full_body(Bytes::from(html)));
                     res.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
                     return Ok(res);

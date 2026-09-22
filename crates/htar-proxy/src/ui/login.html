@@ -1,0 +1,52 @@
+<!-- 1. SECURE STANDALONE FULL-PAGE AUTHENTICATION VIEW -->
+<div id="login-container" class="min-h-screen w-full flex items-center justify-center bg-zinc-950 bg-grid-subtle px-4 relative overflow-hidden z-50">
+    
+    <!-- Background Glow -->
+    <div class="absolute top-1/3 left-1/2 -translate-x-1/2 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="max-w-md w-full bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-2xl backdrop-blur space-y-6 relative z-10">
+        
+        <div class="text-center space-y-3">
+            <!-- DedSec Watch Dogs Skull Logo SVG Icon -->
+            <div class="w-16 h-16 rounded-2xl bg-zinc-950 border border-zinc-800 flex items-center justify-center mx-auto shadow-inner group">
+                <svg viewBox="0 0 100 100" class="w-10 h-10 text-emerald-400 fill-current transition transform group-hover:scale-105">
+                    <path d="M50 12 C28 12 16 26 16 46 C16 58 23 68 32 75 L32 86 L42 86 L42 80 L58 80 L58 86 L68 86 L68 75 C77 68 84 58 84 46 C84 26 72 12 50 12 Z M34 42 C29 42 25 38 25 33 C25 28 29 24 34 24 C39 24 43 28 43 33 C43 38 39 42 34 42 Z M66 42 C61 42 57 38 57 33 C57 28 61 24 66 24 C71 24 75 28 75 33 C75 38 71 42 66 42 Z M42 65 L42 58 L58 58 L58 65 Z" />
+                    <line x1="28" y1="27" x2="40" y2="39" stroke="#09090b" stroke-width="4" stroke-linecap="round"/>
+                    <line x1="40" y1="27" x2="28" y2="39" stroke="#09090b" stroke-width="4" stroke-linecap="round"/>
+                    <line x1="60" y1="27" x2="72" y2="39" stroke="#09090b" stroke-width="4" stroke-linecap="round"/>
+                    <line x1="72" y1="27" x2="60" y2="39" stroke="#09090b" stroke-width="4" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-zinc-100 tracking-tight font-mono">HTAR GATEWAY AUTH PORTAL</h2>
+                <p class="text-xs text-zinc-400 mt-1">Enterprise Ingress Single Sign-On</p>
+            </div>
+        </div>
+
+        <!-- Secure Authentication Form -->
+        <form id="standalone-login-form" class="space-y-4 pt-2">
+            <div>
+                <label class="block text-xs font-semibold text-zinc-300 mb-1.5 font-mono">Username</label>
+                <input type="text" id="custom-user" placeholder="Enter identity username" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:border-emerald-500 focus:outline-none transition font-mono" required autocomplete="username">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-zinc-300 mb-1.5 font-mono">Password</label>
+                <input type="password" id="custom-pass" placeholder="••••••••••••" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:border-emerald-500 focus:outline-none transition font-mono" required autocomplete="current-password">
+            </div>
+            
+            <div class="flex items-center justify-between text-xs text-zinc-400 font-mono pt-1">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked class="w-3.5 h-3.5 rounded bg-zinc-950 border-zinc-800 accent-emerald-500">
+                    <span>Remember session</span>
+                </label>
+                <span class="text-zinc-500 text-[11px]">Protected by Edge Barrier</span>
+            </div>
+
+            <div id="standalone-err" class="hidden text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl text-center font-medium font-mono"></div>
+            
+            <button type="submit" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-zinc-950 rounded-xl text-xs font-bold font-mono transition shadow-lg">
+                Sign In to HTAR Gateway
+            </button>
+        </form>
+    </div>
+</div>
