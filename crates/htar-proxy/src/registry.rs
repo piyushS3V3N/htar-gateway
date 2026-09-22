@@ -37,6 +37,8 @@ pub struct Route {
     pub strip_path: bool,
     pub enable_cache: bool,
     pub cache_ttl_secs: Option<u64>,
+    #[serde(default)]
+    pub enable_auth: bool,
 }
 
 /// Dynamic Consumer & API Key mapping

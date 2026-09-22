@@ -1,0 +1,33 @@
+{{- if .Values.vault.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "htar-gateway.fullname" . }}-vault-agent-config
+  labels:
+    {{- include "htar-gateway.labels" . | nindent 4 }}
+data:
+  vault-agent-config.hcl: |
+    exit_after_auth = false
+    pid_file = "/tmp/vault-agent-pidfile"
+
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "{{ .Values.vault.agentInject.role }}"
+        }
+      }
+    }
+
+    template {
+      destination = "/vault/secrets/env"
+      contents = <<EOF
+    {{ `{{- with secret "` }}{{ .Values.vault.secretPath }}{{ `" -}}` }}
+    HTAR_ADMIN_PASSWORD="{{ `{{ .Data.data.HTAR_ADMIN_PASSWORD }}` }}"
+    HTAR_OPERATOR_PASSWORD="{{ `{{ .Data.data.HTAR_OPERATOR_PASSWORD }}` }}"
+    HTAR_VIEWER_PASSWORD="{{ `{{ .Data.data.HTAR_VIEWER_PASSWORD }}` }}"
+    MYSQL_PASSWORD="{{ `{{ .Data.data.HTAR_MYSQL_PASSWORD }}` }}"
+    {{ `{{- end -}}` }}
+    EOF
+    }
+{{- end }}

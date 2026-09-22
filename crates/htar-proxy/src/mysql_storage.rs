@@ -1,5 +1,9 @@
+use crate::admin::UserRecord;
+use crate::registry::Route;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use std::fs;
+use std::path::Path;
+use tracing::{info, warn};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MysqlConfig {
@@ -20,6 +24,58 @@ impl Default for MysqlConfig {
             database: "htargw_db".to_string(),
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct PersistentState {
+    pub routes: Vec<Route>,
+    pub users: Vec<UserRecord>,
+    pub global_auth_enabled: Option<bool>,
+}
+
+const PERSISTENCE_PATH_PRIMARY: &str = "/tmp/htargw_persistence.json";
+const PERSISTENCE_PATH_FALLBACK: &str = "/tmp/htargw_persistence_backup.json";
+
+pub fn save_persistent_state(routes: &[Route], users: &[UserRecord], global_auth: bool) -> anyhow::Result<()> {
+    let state = PersistentState {
+        routes: routes.to_vec(),
+        users: users.to_vec(),
+        global_auth_enabled: Some(global_auth),
+    };
+    let json_data = serde_json::to_string_pretty(&state)?;
+    
+    if let Err(e) = fs::write(PERSISTENCE_PATH_PRIMARY, &json_data) {
+        warn!("Primary storage path '{}' unwritable ({}), falling back to '{}'", PERSISTENCE_PATH_PRIMARY, e, PERSISTENCE_PATH_FALLBACK);
+        fs::write(PERSISTENCE_PATH_FALLBACK, &json_data)?;
+        info!(
+            "Successfully persisted gateway configuration state ({} routes, {} users) to Fallback Storage ({})",
+            routes.len(),
+            users.len(),
+            PERSISTENCE_PATH_FALLBACK
+        );
+    } else {
+        info!(
+            "Successfully persisted gateway configuration state ({} routes, {} users) to Primary Storage ({})",
+            routes.len(),
+            users.len(),
+            PERSISTENCE_PATH_PRIMARY
+        );
+    }
+    Ok(())
+}
+
+pub fn load_persistent_state() -> Option<PersistentState> {
+    for path in &[PERSISTENCE_PATH_PRIMARY, PERSISTENCE_PATH_FALLBACK] {
+        if Path::new(path).exists() {
+            if let Ok(content) = fs::read_to_string(path) {
+                if let Ok(state) = serde_json::from_str::<PersistentState>(&content) {
+                    info!("Loaded persisted gateway configuration state from Storage ({})", path);
+                    return Some(state);
+                }
+            }
+        }
+    }
+    None
 }
 
 pub struct MysqlStorageEngine {
@@ -70,6 +126,7 @@ impl MysqlStorageEngine {
                 service_id VARCHAR(64) NOT NULL,
                 paths_json TEXT NOT NULL,
                 enable_cache BOOLEAN DEFAULT TRUE,
+                enable_auth BOOLEAN DEFAULT TRUE,
                 strip_path BOOLEAN DEFAULT TRUE
             );
         "#;

@@ -10,6 +10,7 @@ pub mod raft_consensus;
 pub mod registry;
 pub mod router;
 pub mod server;
+pub mod vault;
 pub mod wasm_engine;
 
 pub use admin::AdminApi;
@@ -24,6 +25,7 @@ pub use raft_consensus::{RaftCommand, RaftConsensusManager, RaftResponse};
 pub use registry::{Consumer, Registry, Route, Service, UpstreamTarget};
 pub use router::Router;
 pub use server::GatewayServer;
+pub use vault::{VaultClient, VaultConfig};
 pub use wasm_engine::WasmPluginEngine;
 
 #[cfg(test)]
@@ -59,6 +61,7 @@ mod tests {
             strip_path: false,
             enable_cache: true,
             cache_ttl_secs: Some(60),
+            enable_auth: false,
         });
 
         assert!(!route.id.is_empty());
@@ -165,6 +168,7 @@ mod tests {
             strip_path: false,
             enable_cache: false,
             cache_ttl_secs: None,
+            enable_auth: false,
         });
 
         let matched = registry.match_request("localhost:8443", "GET", "/v2/_catalog");

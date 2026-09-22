@@ -1,4 +1,4 @@
-replicaCount: 3
+replicaCount: 2
 
 image:
   repository: htar-gateway
@@ -28,7 +28,7 @@ resources:
 autoscaling:
   enabled: true
   minReplicas: 2
-  maxReplicas: 20
+  maxReplicas: 10
   targetCPUUtilizationPercentage: 70
 
 config:
@@ -37,3 +37,33 @@ config:
   workerThreads: 8
   cacheEnabled: true
   maxHotMemoryMb: 512
+
+# --- Enterprise Identity & Authentication Section ---
+# Zero plaintext secrets stored in Helm values!
+# Secrets are dynamically injected at runtime via HashiCorp Vault Agent sidecar or Vault REST API.
+auth:
+  enabled: true
+
+# --- HashiCorp Vault Secrets Management ---
+vault:
+  enabled: true
+  address: "http://vault.dev-tools.svc.cluster.local:8200"
+  secretPath: "secret/data/htargw"
+  agentInject:
+    enabled: true
+    role: "htar-gateway"
+    secretMountPath: "/vault/secrets"
+    secretFileName: "env"
+
+# --- MySQL Cluster Database Settings ---
+mysql:
+  enabled: true
+  host: "mysql.dev-tools.svc.cluster.local"
+  port: 3306
+  database: "htargw_db"
+
+# --- Kubernetes Dashboard SSO Auth Proxy Integration ---
+k8sDashboard:
+  enabled: true
+  upstreamUrl: "http://kubernetes-dashboard.dev-tools.svc.cluster.local:9090"
+  pathPrefix: "/k8s-dashboard"

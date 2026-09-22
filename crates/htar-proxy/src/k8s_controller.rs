@@ -146,15 +146,28 @@ impl K8sController {
             health_check_path,
         });
 
+        let is_k8s_dashboard = name.contains("kubernetes-dashboard") || path.starts_with("/kubernetes");
+        let route_id = if is_k8s_dashboard {
+            "k8s_dashboard_route".to_string()
+        } else {
+            format!("route_{}", service_id)
+        };
+        let (enable_cache, cache_ttl_secs, enable_auth) = if let Some(existing) = registry.get_route(&route_id) {
+            (existing.enable_cache, existing.cache_ttl_secs, existing.enable_auth)
+        } else {
+            (true, Some(120), is_k8s_dashboard)
+        };
+
         registry.add_route(Route {
-            id: format!("route_{}", service_id),
+            id: route_id,
             service_id: svc.id,
             hosts: vec![],
             paths: vec![path],
             methods: vec![],
             strip_path,
-            enable_cache: true,
-            cache_ttl_secs: Some(120),
+            enable_cache,
+            cache_ttl_secs,
+            enable_auth,
         });
     }
 
@@ -243,17 +256,42 @@ impl K8sController {
                                 let host_list = rule.host.as_ref().map(|h| vec![h.clone()]).unwrap_or_default();
                                 let clean_host_id = rule.host.as_deref().unwrap_or("wildcard").replace('.', "_");
                                 let clean_path_id = path_str.replace('/', "_").replace('*', "");
-                                let route_id = format!("route_ing_{}_{}_{}", svc_id, clean_host_id, clean_path_id);
+
+                                let is_k8s_dashboard = target_svc_name.contains("kubernetes-dashboard") || path_str.starts_with("/kubernetes");
+
+                                let route_id = if is_k8s_dashboard {
+                                    "k8s_dashboard_route".to_string()
+                                } else {
+                                    format!("route_ing_{}_{}_{}", svc_id, clean_host_id, clean_path_id)
+                                };
+
+                                let (enable_cache, cache_ttl_secs, enable_auth) = if let Some(existing) = registry.get_route(&route_id) {
+                                    (existing.enable_cache, existing.cache_ttl_secs, existing.enable_auth)
+                                } else {
+                                    (true, Some(60), is_k8s_dashboard)
+                                };
 
                                 registry.add_route(Route {
                                     id: route_id,
                                     service_id: svc.id,
                                     hosts: host_list,
-                                    paths: vec![path_str],
+                                    paths: if is_k8s_dashboard {
+                                        vec![
+                                            "/kubernetes".to_string(),
+                                            "/kubernetes/".to_string(),
+                                            "/k8s-dashboard".to_string(),
+                                            "/k8s-dashboard/".to_string(),
+                                            "/kubernetes-dashboard".to_string(),
+                                            "/kubernetes-dashboard/".to_string(),
+                                        ]
+                                    } else {
+                                        vec![path_str]
+                                    },
                                     methods: vec![],
                                     strip_path,
-                                    enable_cache: true,
-                                    cache_ttl_secs: Some(60),
+                                    enable_cache,
+                                    cache_ttl_secs,
+                                    enable_auth,
                                 });
                             }
                         }
@@ -279,7 +317,7 @@ impl K8sController {
 
         let existing_routes = registry.list_routes();
         for r in existing_routes {
-            if r.service_id.starts_with(&prefix) {
+            if r.service_id.starts_with(&prefix) && r.id != "k8s_dashboard_route" {
                 registry.delete_route(&r.id);
             }
         }

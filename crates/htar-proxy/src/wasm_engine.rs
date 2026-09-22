@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use tracing::{info, warn};
-use wasmtime::{Config, Engine, Instance, Linker, Module, Store};
+use wasmtime::{Config, Engine, Linker, Module, Store};
 
 /// Result action returned by Wasm Plugin Guest Execution
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,3 +87,26 @@ impl WasmPluginEngine {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wasm_engine_register_and_execute() {
+        let engine = WasmPluginEngine::new().expect("Failed to initialize Wasm engine");
+        
+        // Minimal valid WebAssembly binary bytecode (magic \0asm + version 1)
+        // containing a function that returns an i32
+        let wasm_bytes = include_bytes!("../../../examples/sample_plugin.wasm");
+        
+        let res = engine.register_plugin("sample_plugin".to_string(), wasm_bytes);
+        assert!(res.is_ok(), "Failed to register sample wasm plugin: {:?}", res.err());
+        assert_eq!(engine.list_plugins(), vec!["sample_plugin"]);
+
+        // Calling execution when on_request_headers export is absent returns Continue gracefully
+        let result = engine.execute_request_headers("sample_plugin", 1);
+        assert_eq!(result, WasmActionResult::Continue);
+    }
+}
+

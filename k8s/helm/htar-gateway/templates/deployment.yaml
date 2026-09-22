@@ -15,6 +15,19 @@ spec:
     metadata:
       labels:
         {{- include "htar-gateway.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- if .Values.vault.enabled }}
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: {{ .Values.vault.agentInject.role | quote }}
+        vault.hashicorp.com/agent-inject-secret-env: {{ .Values.vault.secretPath | quote }}
+        vault.hashicorp.com/agent-inject-template-env: |
+          {{ `{{- with secret "` }}{{ .Values.vault.secretPath }}{{ `" -}}` }}
+          HTAR_ADMIN_PASSWORD="{{ `{{ .Data.data.HTAR_ADMIN_PASSWORD }}` }}"
+          HTAR_OPERATOR_PASSWORD="{{ `{{ .Data.data.HTAR_OPERATOR_PASSWORD }}` }}"
+          HTAR_VIEWER_PASSWORD="{{ `{{ .Data.data.HTAR_VIEWER_PASSWORD }}` }}"
+          MYSQL_PASSWORD="{{ `{{ .Data.data.HTAR_MYSQL_PASSWORD }}` }}"
+          {{ `{{- end -}}` }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "htar-gateway.serviceAccountName" . }}
       securityContext:
@@ -25,6 +38,19 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: VAULT_ADDR
+              value: {{ .Values.vault.address | quote }}
+            - name: VAULT_SECRET_PATH
+              value: {{ .Values.vault.secretPath | quote }}
+            - name: MYSQL_HOST
+              value: {{ .Values.mysql.host | quote }}
+            - name: MYSQL_PORT
+              value: {{ .Values.mysql.port | quote }}
+            - name: MYSQL_DATABASE
+              value: {{ .Values.mysql.database | quote }}
+            - name: K8S_DASHBOARD_URL
+              value: {{ .Values.k8sDashboard.upstreamUrl | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.config.port }}

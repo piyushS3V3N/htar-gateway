@@ -80,6 +80,7 @@ impl MigrateEngine {
             strip_path: true,
             enable_cache: true,
             cache_ttl_secs: Some(300),
+            enable_auth: false,
         };
         routes.push(route);
 
@@ -155,6 +156,7 @@ impl MigrateEngine {
                     strip_path: r.get("strip_path").and_then(|v| v.as_bool()).unwrap_or(true),
                     enable_cache: true,
                     cache_ttl_secs: Some(60),
+                    enable_auth: false,
                 });
             }
         }

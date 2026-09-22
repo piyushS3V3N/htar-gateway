@@ -64,6 +64,7 @@ impl GatewayServer {
                 strip_path: route_cfg.strip_path,
                 enable_cache: route_cfg.enable_cache,
                 cache_ttl_secs: route_cfg.cache_ttl_secs,
+                enable_auth: false,
             });
         }
 
@@ -255,6 +256,34 @@ impl GatewayServer {
             }
         };
 
+        // Enforce Per-Route Auth Portal Protection or Protected Infrastructure Endpoints
+        let is_k8s_api = path.contains("/api/v1/") || path.contains("/kubernetes/api/");
+        let is_k8s_root = (path.starts_with("/kubernetes") || path.starts_with("/k8s-dashboard") || path.starts_with("/kubernetes-dashboard")) && !is_k8s_api;
+        let requires_auth = (route.enable_auth && !is_k8s_api || is_k8s_root) && self.admin_api.is_auth_enabled();
+        if requires_auth {
+            if !self.admin_api.is_authenticated(&req) {
+                info!("Unauthorized access attempt blocked on auth-protected route '{}': {}", route.id, path);
+
+                // If browser navigation (accept header containing text/html), serve the internal Auth Portal UI
+                let accepts_html = req.headers().get("accept").and_then(|h| h.to_str().ok()).map(|a| a.contains("text/html")).unwrap_or(false);
+                if accepts_html && method == Method::GET {
+                    let html = include_str!("admin_dashboard.html");
+                    let mut res = Response::new(full_body(Bytes::from(html)));
+                    res.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+                    return Ok(res);
+                }
+
+                let mut res = Response::new(full_body(Bytes::from(serde_json::json!({
+                    "error": "Authentication required for this endpoint. Please log in at /admin",
+                    "login_url": "/admin",
+                    "status": 401
+                }).to_string())));
+                *res.status_mut() = StatusCode::UNAUTHORIZED;
+                res.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                return Ok(res);
+            }
+        }
+
         // Extract Request Headers for Plugin Pipeline
         let req_headers: Vec<(String, String)> = req
             .headers()
@@ -330,12 +359,45 @@ impl GatewayServer {
 
         let target_url = format!("{}{}", upstream_base_url, target_path);
 
+        // Collect incoming request body bytes for POST/PUT/PATCH proxying
+        let req_body_bytes = req.into_body().collect().await?.to_bytes();
+
         // Proxy Request to Selected Upstream
         let mut client_req = self.http_client.request(method, &target_url);
+        let is_k8s_target = path.starts_with("/kubernetes") || target_url.contains("kubernetes") || target_url.contains("dashboard");
+
+        let sa_token = if is_k8s_target {
+            std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/token")
+                .or_else(|_| std::env::var("K8S_SA_TOKEN"))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        let mut user_has_valid_auth = false;
+
         for (k, v) in &plugin_ctx.request_headers {
             if k.to_lowercase() != "host" {
+                if k.to_lowercase() == "authorization" {
+                    // Do not forward HTAR internal gateway session tokens to upstream target
+                    if v.contains("htar_sess_") {
+                        continue;
+                    }
+                    if v.starts_with("Bearer ") && !v.contains("htar_sess_") {
+                        user_has_valid_auth = true;
+                    }
+                }
                 client_req = client_req.header(k, v);
             }
+        }
+
+        // Automatic K8s Dashboard SSO: Inject Service Account Bearer Token ONLY IF user did not provide a custom Bearer token
+        if is_k8s_target && !user_has_valid_auth && !sa_token.trim().is_empty() {
+            client_req = client_req.header("Authorization", format!("Bearer {}", sa_token.trim()));
+        }
+
+        if !req_body_bytes.is_empty() {
+            client_req = client_req.body(req_body_bytes);
         }
 
         match client_req.send().await {
