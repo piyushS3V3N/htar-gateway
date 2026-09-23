@@ -226,6 +226,49 @@ impl AdminApi {
         }
     }
 
+    pub fn reload_persistent_state(&self) {
+        if let Some(state) = crate::mysql_storage::load_persistent_state() {
+            if let Some(global_auth) = state.global_auth_enabled {
+                self.auth_enabled.store(global_auth, Ordering::Relaxed);
+            }
+            for u in state.users {
+                self.users.insert(u.username.clone(), u);
+            }
+            for r in state.routes {
+                if (r.paths.contains(&"/kubernetes".to_string()) || r.paths.contains(&"/kubernetes/".to_string())) && r.id != "k8s_dashboard_route" {
+                    continue;
+                }
+                self.registry.add_route(r);
+            }
+        }
+    }
+
+    pub fn get_user(&self, username: &str) -> Option<UserRecord> {
+        let trimmed = username.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if let Some(user) = self.users.get(trimmed) {
+            return Some(user.clone());
+        }
+        let lower = trimmed.to_lowercase();
+        for u in self.users.iter() {
+            if u.key().to_lowercase() == lower || u.value().username.to_lowercase() == lower {
+                return Some(u.value().clone());
+            }
+        }
+        self.reload_persistent_state();
+        if let Some(user) = self.users.get(trimmed) {
+            return Some(user.clone());
+        }
+        for u in self.users.iter() {
+            if u.key().to_lowercase() == lower || u.value().username.to_lowercase() == lower {
+                return Some(u.value().clone());
+            }
+        }
+        None
+    }
+
     pub fn extract_token(&self, req: &Request<hyper::body::Incoming>) -> Option<String> {
         if let Some(auth_val) = req.headers().get("Authorization").and_then(|h| h.to_str().ok()) {
             if let Some(token) = auth_val.strip_prefix("Bearer ") {
@@ -326,14 +369,18 @@ impl AdminApi {
             let body_bytes = req.into_body().collect().await?.to_bytes();
             let json_val: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
 
-            let username = json_val.get("username").and_then(|v| v.as_str()).unwrap_or("admin");
-            let password = json_val.get("password").and_then(|v| v.as_str()).unwrap_or("");
+            let username_input = json_val.get("username").and_then(|v| v.as_str())
+                .or_else(|| json_val.get("custom_user").and_then(|v| v.as_str()))
+                .unwrap_or("").trim();
+            let password_input = json_val.get("password").and_then(|v| v.as_str())
+                .or_else(|| json_val.get("custom_pass").and_then(|v| v.as_str()))
+                .unwrap_or("").trim();
 
-            if let Some(user_record) = self.users.get(username) {
-                let is_password_valid = user_record.password_hash == password
-                    || (username == "admin" && (password == "password123" || password == "admin_secret_pass_2026"))
-                    || (username == "operator" && (password == "op-password" || password == "op_secret_pass_2026"))
-                    || (username == "viewer" && (password == "view_secret_pass_2026"));
+            if let Some(user_record) = self.get_user(username_input) {
+                let is_password_valid = user_record.password_hash == password_input
+                    || (user_record.username == "admin" && (password_input == "password123" || password_input == "admin_secret_pass_2026"))
+                    || (user_record.username == "operator" && (password_input == "op-password" || password_input == "op_secret_pass_2026"))
+                    || (user_record.username == "viewer" && (password_input == "view_secret_pass_2026"));
 
                 if is_password_valid {
                     let token = format!("htar_sess_{}", uuid::Uuid::new_v4());
@@ -488,6 +535,7 @@ impl AdminApi {
         let response_json = match (method.clone(), path.as_str()) {
             // --- User Identity Management & MySQL Sync API ---
             (Method::GET, "/admin/v1/users") => {
+                self.reload_persistent_state();
                 let user_list: Vec<serde_json::Value> = self.users.iter().map(|u| {
                     json!({
                         "username": u.username,
