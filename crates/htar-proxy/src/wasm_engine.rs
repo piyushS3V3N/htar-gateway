@@ -86,6 +86,17 @@ impl WasmPluginEngine {
             }
         }
     }
+
+    /// Execute all registered WASM plugins in sequence
+    pub fn execute_all_request_plugins(&self, context_id: u32) -> WasmActionResult {
+        for entry in self.plugins.iter() {
+            let res = self.execute_request_headers(entry.key(), context_id);
+            if res != WasmActionResult::Continue {
+                return res;
+            }
+        }
+        WasmActionResult::Continue
+    }
 }
 
 #[cfg(test)]

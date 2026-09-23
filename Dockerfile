@@ -8,9 +8,10 @@ WORKDIR /usr/src/htar-gateway
 # Install build dependencies
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
-# Copy workspace manifests
+# Copy workspace manifests and source code
 COPY Cargo.toml ./
 COPY crates ./crates
+COPY examples ./examples
 
 # Build release binary for htar-cli
 RUN cargo build --release -p htar-cli

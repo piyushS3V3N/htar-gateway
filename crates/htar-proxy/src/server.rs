@@ -33,6 +33,11 @@ impl GatewayServer {
         let registry = Arc::new(Registry::new());
         let plugins = Arc::new(PluginPipeline::new());
         let wasm_engine = Arc::new(crate::wasm_engine::WasmPluginEngine::new().expect("Failed to initialize Wasm engine"));
+        
+        let sample_bytes = include_bytes!("../../../examples/sample_plugin.wasm");
+        let _ = wasm_engine.register_plugin("auth_header_plugin".to_string(), sample_bytes);
+        let _ = wasm_engine.register_plugin("sample_plugin".to_string(), sample_bytes);
+
         let metrics = Arc::new(crate::admin::ProxyMetrics::new());
         let admin_api = Arc::new(AdminApi::new(registry.clone(), plugins.clone(), wasm_engine.clone(), metrics.clone()));
 
@@ -320,6 +325,19 @@ impl GatewayServer {
                 return Ok(res);
             }
             PluginResult::Continue => {}
+        }
+
+        // 4b. Execute WebAssembly JIT Plugin Filters (Wasmtime Engine)
+        match self.wasm_engine.execute_all_request_plugins(1) {
+            crate::wasm_engine::WasmActionResult::AccessDenied => {
+                let mut res = Response::new(full_body(Bytes::from("403 Forbidden by WASM Security Plugin")));
+                *res.status_mut() = StatusCode::FORBIDDEN;
+                return Ok(res);
+            }
+            crate::wasm_engine::WasmActionResult::HeaderRewrite => {
+                plugin_ctx.response_headers.push(("X-Wasm-Processed".to_string(), "true".to_string()));
+            }
+            crate::wasm_engine::WasmActionResult::Continue => {}
         }
 
         // 5. HTAR O(1) Cache Lookup (if enabled)
