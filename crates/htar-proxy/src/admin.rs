@@ -71,10 +71,17 @@ pub struct AdminApi {
     plugins: Arc<PluginPipeline>,
     wasm_engine: Arc<WasmPluginEngine>,
     vault_client: Arc<crate::vault::VaultClient>,
-    sessions: Arc<DashMap<String, UserSession>>,
+    sessions: Arc<DashMap<String, SessionRecord>>,
     users: Arc<DashMap<String, UserRecord>>,
     auth_enabled: Arc<AtomicBool>,
     metrics: Arc<ProxyMetrics>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct SessionRecord {
+    pub session: UserSession,
+    pub created_at_secs: u64,
+    pub expires_at_secs: u64,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -132,11 +139,19 @@ impl AdminApi {
         });
 
         // Seed initial admin session with dynamically generated UUID token (never static hardcoded string)
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let initial_token = format!("htar_sess_{}", uuid::Uuid::new_v4());
-        sessions.insert(initial_token, UserSession {
-            username: "admin".to_string(),
-            role: "SuperAdmin".to_string(),
-            permissions: vec!["view:all".to_string(), "manage:all".to_string()],
+        sessions.insert(initial_token, SessionRecord {
+            session: UserSession {
+                username: "admin".to_string(),
+                role: "SuperAdmin".to_string(),
+                permissions: vec!["view:all".to_string(), "manage:all".to_string()],
+            },
+            created_at_secs: now_secs,
+            expires_at_secs: now_secs + 28800,
         });
 
         // Seed default Kubernetes Dashboard Service & Auth-Protected Route
@@ -211,6 +226,29 @@ impl AdminApi {
         }
     }
 
+    pub fn extract_token(&self, req: &Request<hyper::body::Incoming>) -> Option<String> {
+        if let Some(auth_val) = req.headers().get("Authorization").and_then(|h| h.to_str().ok()) {
+            if let Some(token) = auth_val.strip_prefix("Bearer ") {
+                let trimmed = token.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+        if let Some(cookie_val) = req.headers().get(COOKIE).and_then(|h| h.to_str().ok()) {
+            for cookie in cookie_val.split(';') {
+                let trimmed = cookie.trim();
+                if let Some(token) = trimmed.strip_prefix("htar_session_token=") {
+                    let token_val = token.trim();
+                    if !token_val.is_empty() {
+                        return Some(token_val.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn extract_session(&self, req: &Request<hyper::body::Incoming>) -> Option<UserSession> {
         if !self.auth_enabled.load(Ordering::Relaxed) {
             // Auth bypassed -> default to SuperAdmin
@@ -221,39 +259,18 @@ impl AdminApi {
             });
         }
 
-        // Check Bearer Header or Cookie
-        if let Some(auth_val) = req.headers().get("Authorization").and_then(|h| h.to_str().ok()) {
-            if let Some(token) = auth_val.strip_prefix("Bearer ") {
-                if let Some(session) = self.sessions.get(token) {
-                    return Some(session.clone());
-                } else if token.starts_with("htar_sess_") {
-                    let session = UserSession {
-                        username: "admin".to_string(),
-                        role: "SuperAdmin".to_string(),
-                        permissions: vec!["view:all".to_string(), "manage:all".to_string()],
-                    };
-                    self.sessions.insert(token.to_string(), session.clone());
-                    return Some(session);
-                }
-            }
-        }
+        let token = self.extract_token(req)?;
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
-        if let Some(cookie_val) = req.headers().get(COOKIE).and_then(|h| h.to_str().ok()) {
-            for cookie in cookie_val.split(';') {
-                let trimmed = cookie.trim();
-                if let Some(token) = trimmed.strip_prefix("htar_session_token=") {
-                    if let Some(session) = self.sessions.get(token) {
-                        return Some(session.clone());
-                    } else if token.starts_with("htar_sess_") {
-                        let session = UserSession {
-                            username: "admin".to_string(),
-                            role: "SuperAdmin".to_string(),
-                            permissions: vec!["view:all".to_string(), "manage:all".to_string()],
-                        };
-                        self.sessions.insert(token.to_string(), session.clone());
-                        return Some(session);
-                    }
-                }
+        if let Some(rec) = self.sessions.get(&token) {
+            if now_secs <= rec.expires_at_secs {
+                return Some(rec.session.clone());
+            } else {
+                drop(rec);
+                self.sessions.remove(&token);
             }
         }
 
@@ -326,7 +343,19 @@ impl AdminApi {
                         permissions: user_record.permissions.clone(),
                     };
 
-                    self.sessions.insert(token.clone(), session.clone());
+                    let now_secs = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+
+                    self.sessions.insert(
+                        token.clone(),
+                        SessionRecord {
+                            session: session.clone(),
+                            created_at_secs: now_secs,
+                            expires_at_secs: now_secs + 28800, // 8 hour TTL
+                        },
+                    );
 
                     let mut res = Response::new(full_body(Bytes::from(json!({
                         "status": "authenticated",
@@ -337,7 +366,10 @@ impl AdminApi {
                     res.headers_mut().insert(CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
                     res.headers_mut().insert(
                         SET_COOKIE,
-                        hyper::header::HeaderValue::from_str(&format!("htar_session_token={}; Path=/; HttpOnly; SameSite=Lax", token)).unwrap(),
+                        hyper::header::HeaderValue::from_str(&format!(
+                            "htar_session_token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800",
+                            token
+                        )).unwrap(),
                     );
 
                     return Ok(res);
@@ -349,11 +381,17 @@ impl AdminApi {
 
         // --- Auth API: Logout ---
         if method == Method::POST && path == "/admin/v1/auth/logout" {
+            if let Some(token) = self.extract_token(&req) {
+                self.sessions.remove(&token);
+            }
+
             let mut res = Response::new(full_body(Bytes::from(json!({ "status": "logged_out" }).to_string())));
             res.headers_mut().insert(CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
             res.headers_mut().insert(
                 SET_COOKIE,
-                hyper::header::HeaderValue::from_static("htar_session_token=; Path=/; Max-Age=0"),
+                hyper::header::HeaderValue::from_static(
+                    "htar_session_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+                ),
             );
             return Ok(res);
         }

@@ -57,8 +57,14 @@ async function toggleAuthEnforcement() {
     refreshData();
 }
 
-function logout() {
+async function logout() {
+    try {
+        await fetchAPI('/admin/v1/auth/logout', { method: 'POST' });
+    } catch (e) {
+        console.error("Logout API error:", e);
+    }
     localStorage.removeItem('htar_token');
+    document.cookie = "htar_session_token=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
     showLoginScreen();
 }
 
