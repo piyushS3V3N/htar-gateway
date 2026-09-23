@@ -76,7 +76,13 @@ spec:
           volumeMounts:
             - name: config-volume
               mountPath: /app/config
+            - name: storage-volume
+              mountPath: /tmp/htargw-store
       volumes:
         - name: config-volume
           configMap:
             name: {{ include "htar-gateway.fullname" . }}-config
+        - name: storage-volume
+          hostPath:
+            path: /tmp/htar-gateway-persistence
+            type: DirectoryOrCreate

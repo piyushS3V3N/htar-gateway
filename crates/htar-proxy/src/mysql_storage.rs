@@ -33,10 +33,84 @@ pub struct PersistentState {
     pub global_auth_enabled: Option<bool>,
 }
 
+const PERSISTENCE_PATH_SHARED: &str = "/tmp/htargw-store/htargw_persistence.json";
 const PERSISTENCE_PATH_PRIMARY: &str = "/tmp/htargw_persistence.json";
 const PERSISTENCE_PATH_FALLBACK: &str = "/tmp/htargw_persistence_backup.json";
 
+fn sync_save_to_mysql(users: &[UserRecord]) -> anyhow::Result<()> {
+    let cfg = MysqlConfig::default();
+    
+    let init_sql = format!(
+        "CREATE DATABASE IF NOT EXISTS {}; USE {}; CREATE TABLE IF NOT EXISTS users (id VARCHAR(64) PRIMARY KEY, username VARCHAR(255) UNIQUE NOT NULL, password_hash VARCHAR(255) NOT NULL, salt VARCHAR(255) NOT NULL, role VARCHAR(64) NOT NULL, permissions_json TEXT NOT NULL, created_at VARCHAR(64));",
+        cfg.database, cfg.database
+    );
+    let _ = std::process::Command::new("mysql")
+        .args(["--skip-ssl", "-h", &cfg.host, "-P", &cfg.port.to_string(), "-u", &cfg.user, &format!("-p{}", cfg.password), "-e", &init_sql])
+        .output();
+
+    for u in users {
+        let permissions_json = serde_json::to_string(&u.permissions).unwrap_or_else(|_| "[]".to_string());
+        let sql = format!(
+            "USE {}; INSERT INTO users (id, username, password_hash, salt, role, permissions_json, created_at) VALUES ('{}', '{}', '{}', '{}', '{}', '{}', '{}') ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), salt=VALUES(salt), role=VALUES(role), permissions_json=VALUES(permissions_json), created_at=VALUES(created_at);",
+            cfg.database,
+            u.username,
+            u.username,
+            u.password_hash,
+            u.salt,
+            u.role,
+            permissions_json,
+            u.created_at
+        );
+        let _ = std::process::Command::new("mysql")
+            .args(["--skip-ssl", "-h", &cfg.host, "-P", &cfg.port.to_string(), "-u", &cfg.user, &format!("-p{}", cfg.password), "-e", &sql])
+            .output();
+    }
+    Ok(())
+}
+
+fn sync_load_from_mysql() -> Option<Vec<UserRecord>> {
+    let cfg = MysqlConfig::default();
+    let sql = format!("USE {}; SELECT username, password_hash, salt, role, permissions_json, created_at FROM users;", cfg.database);
+    
+    let output = std::process::Command::new("mysql")
+        .args(["--skip-ssl", "-h", &cfg.host, "-P", &cfg.port.to_string(), "-u", &cfg.user, &format!("-p{}", cfg.password), "-B", "-N", "-e", &sql])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut users = Vec::new();
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 6 {
+            let permissions: Vec<String> = serde_json::from_str(parts[4]).unwrap_or_default();
+            users.push(UserRecord {
+                username: parts[0].to_string(),
+                password_hash: parts[1].to_string(),
+                salt: parts[2].to_string(),
+                role: parts[3].to_string(),
+                permissions,
+                created_at: parts[5].to_string(),
+            });
+        }
+    }
+
+    if users.is_empty() {
+        None
+    } else {
+        Some(users)
+    }
+}
+
 pub fn save_persistent_state(routes: &[Route], users: &[UserRecord], global_auth: bool) -> anyhow::Result<()> {
+    // 1. Write user records directly to MySQL database server
+    let _ = sync_save_to_mysql(users);
+
+    // 2. Write backup JSON to local storage
     let state = PersistentState {
         routes: routes.to_vec(),
         users: users.to_vec(),
@@ -44,32 +118,42 @@ pub fn save_persistent_state(routes: &[Route], users: &[UserRecord], global_auth
     };
     let json_data = serde_json::to_string_pretty(&state)?;
     
+    if let Err(e) = fs::create_dir_all("/tmp/htargw-store") {
+        warn!("Could not create shared storage dir /tmp/htargw-store: {}", e);
+    }
+
+    let _ = fs::write(PERSISTENCE_PATH_SHARED, &json_data);
+
     if let Err(e) = fs::write(PERSISTENCE_PATH_PRIMARY, &json_data) {
         warn!("Primary storage path '{}' unwritable ({}), falling back to '{}'", PERSISTENCE_PATH_PRIMARY, e, PERSISTENCE_PATH_FALLBACK);
         fs::write(PERSISTENCE_PATH_FALLBACK, &json_data)?;
-        info!(
-            "Successfully persisted gateway configuration state ({} routes, {} users) to Fallback Storage ({})",
-            routes.len(),
-            users.len(),
-            PERSISTENCE_PATH_FALLBACK
-        );
     } else {
         info!(
-            "Successfully persisted gateway configuration state ({} routes, {} users) to Primary Storage ({})",
+            "Successfully persisted gateway configuration state ({} routes, {} users) to Storage & MySQL",
             routes.len(),
-            users.len(),
-            PERSISTENCE_PATH_PRIMARY
+            users.len()
         );
     }
     Ok(())
 }
 
 pub fn load_persistent_state() -> Option<PersistentState> {
-    for path in &[PERSISTENCE_PATH_PRIMARY, PERSISTENCE_PATH_FALLBACK] {
+    // 1. Fetch user identities directly from MySQL cluster DB
+    if let Some(mysql_users) = sync_load_from_mysql() {
+        let mut state = load_persistent_file_state().unwrap_or_default();
+        state.users = mysql_users;
+        return Some(state);
+    }
+
+    // 2. Fallback to file storage if MySQL unavailable
+    load_persistent_file_state()
+}
+
+fn load_persistent_file_state() -> Option<PersistentState> {
+    for path in &[PERSISTENCE_PATH_SHARED, PERSISTENCE_PATH_PRIMARY, PERSISTENCE_PATH_FALLBACK] {
         if Path::new(path).exists() {
             if let Ok(content) = fs::read_to_string(path) {
                 if let Ok(state) = serde_json::from_str::<PersistentState>(&content) {
-                    tracing::debug!("Loaded persisted gateway configuration state from Storage ({})", path);
                     return Some(state);
                 }
             }

@@ -22,8 +22,8 @@ FROM debian:trixie-slim
 
 WORKDIR /app
 
-# Install runtime SSL CA certificates
-RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
+# Install runtime SSL CA certificates and MySQL client
+RUN apt-get update && apt-get install -y ca-certificates curl mariadb-client && rm -rf /var/lib/apt/lists/*
 
 # Create non-root system user
 RUN useradd -m -u 10001 -s /bin/sh htargw
