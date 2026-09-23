@@ -77,6 +77,20 @@ pub struct AdminApi {
     metrics: Arc<ProxyMetrics>,
 }
 
+use sha2::{Digest, Sha256};
+
+pub fn generate_salt() -> String {
+    uuid::Uuid::new_v4().to_string().replace("-", "")
+}
+
+pub fn hash_password(password: &str, salt: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(password.as_bytes());
+    hasher.update(b":");
+    hasher.update(salt.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SessionRecord {
     pub session: UserSession,
@@ -88,8 +102,12 @@ pub struct SessionRecord {
 pub struct UserRecord {
     pub username: String,
     pub password_hash: String,
+    #[serde(default)]
+    pub salt: String,
     pub role: String,
     pub permissions: Vec<String>,
+    #[serde(default)]
+    pub created_at: String,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -117,25 +135,37 @@ impl AdminApi {
         let viewer_password = std::env::var("HTAR_VIEWER_PASSWORD").unwrap_or_else(|_| "view_secret_pass_2026".to_string());
 
         // --- Identity & User Credential Store ---
+        let admin_salt = generate_salt();
+        let admin_hash = hash_password(&admin_password, &admin_salt);
         users.insert("admin".to_string(), UserRecord {
             username: "admin".to_string(),
-            password_hash: admin_password,
+            password_hash: admin_hash,
+            salt: admin_salt,
             role: "SuperAdmin".to_string(),
             permissions: vec!["view:all".to_string(), "manage:all".to_string()],
+            created_at: "2026-01-01T00:00:00Z".to_string(),
         });
 
+        let operator_salt = generate_salt();
+        let operator_hash = hash_password(&operator_password, &operator_salt);
         users.insert("operator".to_string(), UserRecord {
             username: "operator".to_string(),
-            password_hash: operator_password,
+            password_hash: operator_hash,
+            salt: operator_salt,
             role: "Operator".to_string(),
             permissions: vec!["view:all".to_string(), "manage:routes".to_string(), "manage:services".to_string(), "manage:switchboard".to_string()],
+            created_at: "2026-01-01T00:00:00Z".to_string(),
         });
 
+        let viewer_salt = generate_salt();
+        let viewer_hash = hash_password(&viewer_password, &viewer_salt);
         users.insert("viewer".to_string(), UserRecord {
             username: "viewer".to_string(),
-            password_hash: viewer_password,
+            password_hash: viewer_hash,
+            salt: viewer_salt,
             role: "Viewer".to_string(),
             permissions: vec!["view:all".to_string()],
+            created_at: "2026-01-01T00:00:00Z".to_string(),
         });
 
         // Seed initial admin session with dynamically generated UUID token (never static hardcoded string)
@@ -238,7 +268,9 @@ impl AdminApi {
                 if (r.paths.contains(&"/kubernetes".to_string()) || r.paths.contains(&"/kubernetes/".to_string())) && r.id != "k8s_dashboard_route" {
                     continue;
                 }
-                self.registry.add_route(r);
+                if self.registry.get_route(&r.id).is_none() {
+                    self.registry.add_route(r);
+                }
             }
         }
     }
@@ -377,10 +409,9 @@ impl AdminApi {
                 .unwrap_or("").trim();
 
             if let Some(user_record) = self.get_user(username_input) {
-                let is_password_valid = user_record.password_hash == password_input
-                    || (user_record.username == "admin" && (password_input == "password123" || password_input == "admin_secret_pass_2026"))
-                    || (user_record.username == "operator" && (password_input == "op-password" || password_input == "op_secret_pass_2026"))
-                    || (user_record.username == "viewer" && (password_input == "view_secret_pass_2026"));
+                let computed_hash = hash_password(password_input, &user_record.salt);
+                let is_password_valid = user_record.password_hash == computed_hash
+                    || (user_record.salt.is_empty() && user_record.password_hash == password_input);
 
                 if is_password_valid {
                     let token = format!("htar_sess_{}", uuid::Uuid::new_v4());
@@ -489,7 +520,9 @@ impl AdminApi {
                     for (k, v) in &secrets {
                         if k == "HTAR_ADMIN_PASSWORD" || k == "admin_password" {
                             if let Some(mut user) = self.users.get_mut("admin") {
-                                user.password_hash = v.clone();
+                                let salt = generate_salt();
+                                user.salt = salt.clone();
+                                user.password_hash = hash_password(v, &salt);
                             }
                         }
                     }
@@ -535,12 +568,13 @@ impl AdminApi {
         let response_json = match (method.clone(), path.as_str()) {
             // --- User Identity Management & MySQL Sync API ---
             (Method::GET, "/admin/v1/users") => {
-                self.reload_persistent_state();
                 let user_list: Vec<serde_json::Value> = self.users.iter().map(|u| {
                     json!({
                         "username": u.username,
                         "role": u.role,
                         "permissions": u.permissions,
+                        "created_at": u.created_at,
+                        "password_protection": "SHA-256 (Salted & Hashed)",
                         "mysql_storage_status": "Synced (htargw_db.users)"
                     })
                 }).collect();
@@ -574,11 +608,20 @@ impl AdminApi {
                         _ => vec!["view:all".to_string()],
                     };
 
+                    let salt = generate_salt();
+                    let password_hash = hash_password(password, &salt);
+                    let now_str = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs().to_string())
+                        .unwrap_or_default();
+
                     let record = UserRecord {
                         username: username.to_string(),
-                        password_hash: password.to_string(),
+                        password_hash,
+                        salt,
                         role: role.to_string(),
                         permissions,
+                        created_at: now_str,
                     };
 
                     self.users.insert(username.to_string(), record.clone());
@@ -586,7 +629,13 @@ impl AdminApi {
                     json!({
                         "status": "created_and_persisted",
                         "mysql_database": "htargw_db",
-                        "user": record
+                        "user": json!({
+                            "username": record.username,
+                            "role": record.role,
+                            "permissions": record.permissions,
+                            "created_at": record.created_at,
+                            "password_protection": "SHA-256 (Salted & Hashed)"
+                        })
                     })
                 } else {
                     return Ok(bad_request("Invalid JSON body"));

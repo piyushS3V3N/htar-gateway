@@ -69,7 +69,7 @@ pub fn load_persistent_state() -> Option<PersistentState> {
         if Path::new(path).exists() {
             if let Ok(content) = fs::read_to_string(path) {
                 if let Ok(state) = serde_json::from_str::<PersistentState>(&content) {
-                    info!("Loaded persisted gateway configuration state from Storage ({})", path);
+                    tracing::debug!("Loaded persisted gateway configuration state from Storage ({})", path);
                     return Some(state);
                 }
             }

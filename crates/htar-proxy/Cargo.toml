@@ -24,6 +24,8 @@ reqwest.workspace = true
 jsonwebtoken = "9.3"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 regex = "1.10"
+sha2 = "0.10"
+hex = "0.4"
 
 chitchat = { workspace = true }
 wasmtime = { workspace = true }
