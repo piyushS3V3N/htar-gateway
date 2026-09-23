@@ -110,6 +110,17 @@ pub struct UserRecord {
     pub created_at: String,
 }
 
+const JWT_SECRET: &[u8] = b"htar_gateway_jwt_secret_key_2026_enterprise";
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct AuthClaims {
+    pub sub: String,
+    pub role: String,
+    pub permissions: Vec<String>,
+    pub exp: usize,
+    pub iat: usize,
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct UserSession {
     pub username: String,
@@ -335,6 +346,22 @@ impl AdminApi {
         }
 
         let token = self.extract_token(req)?;
+
+        // 1. Check if token is a valid signed JWT token (Stateless cross-replica authentication)
+        let validation = jsonwebtoken::Validation::default();
+        if let Ok(token_data) = jsonwebtoken::decode::<AuthClaims>(
+            &token,
+            &jsonwebtoken::DecodingKey::from_secret(JWT_SECRET),
+            &validation,
+        ) {
+            return Some(UserSession {
+                username: token_data.claims.sub,
+                role: token_data.claims.role,
+                permissions: token_data.claims.permissions,
+            });
+        }
+
+        // 2. Fallback in-memory session validation
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -414,24 +441,37 @@ impl AdminApi {
                     || (user_record.salt.is_empty() && user_record.password_hash == password_input);
 
                 if is_password_valid {
-                    let token = format!("htar_sess_{}", uuid::Uuid::new_v4());
+                    let now_secs = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+
+                    let claims = AuthClaims {
+                        sub: user_record.username.clone(),
+                        role: user_record.role.clone(),
+                        permissions: user_record.permissions.clone(),
+                        iat: now_secs as usize,
+                        exp: (now_secs + 28800) as usize, // 8 hour expiration
+                    };
+
+                    let token = jsonwebtoken::encode(
+                        &jsonwebtoken::Header::default(),
+                        &claims,
+                        &jsonwebtoken::EncodingKey::from_secret(JWT_SECRET),
+                    ).unwrap_or_else(|_| format!("htar_sess_{}", uuid::Uuid::new_v4()));
+
                     let session = UserSession {
                         username: user_record.username.clone(),
                         role: user_record.role.clone(),
                         permissions: user_record.permissions.clone(),
                     };
 
-                    let now_secs = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-
                     self.sessions.insert(
                         token.clone(),
                         SessionRecord {
                             session: session.clone(),
                             created_at_secs: now_secs,
-                            expires_at_secs: now_secs + 28800, // 8 hour TTL
+                            expires_at_secs: now_secs + 28800,
                         },
                     );
 

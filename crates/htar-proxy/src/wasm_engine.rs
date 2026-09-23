@@ -64,7 +64,11 @@ impl WasmPluginEngine {
         };
 
         let mut store = Store::new(&self.engine, ());
-        let linker = Linker::new(&self.engine);
+        let mut linker = Linker::new(&self.engine);
+
+        let _ = linker.func_wrap("my_namespace", "imported_func", |_ctx: i32| -> i32 { 0 });
+        let _ = linker.func_wrap("env", "imported_func", |_ctx: i32| -> i32 { 0 });
+        let _ = linker.func_wrap("env", "host_log", |_ctx: i32| -> i32 { 0 });
 
         match linker.instantiate(&mut store, &plugin.module) {
             Ok(instance) => {
