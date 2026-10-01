@@ -7,6 +7,9 @@ description = "High performance async HTTP API Gateway proxy engine powered by H
 [dependencies]
 htar-core = { path = "../htar-core" }
 htar-cache = { path = "../htar-cache" }
+htar-wasm = { path = "../htar-wasm" }
+htar-graphql = { path = "../htar-graphql" }
+htar-ebpf = { path = "../htar-ebpf" }
 tokio = { workspace = true, features = ["full"] }
 hyper.workspace = true
 hyper-util.workspace = true
@@ -26,6 +29,8 @@ uuid = { version = "1.8", features = ["v4", "serde"] }
 regex = "1.10"
 sha2 = "0.10"
 hex = "0.4"
+ring = "0.17"
+base64 = "0.22"
 
 chitchat = { workspace = true }
 wasmtime = { workspace = true }

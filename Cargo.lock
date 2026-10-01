@@ -1199,10 +1199,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "htar-ebpf"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dashmap",
+ "tracing",
+]
+
+[[package]]
+name = "htar-graphql"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "htar-proxy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "bytes",
  "chitchat",
  "dashmap",
@@ -1211,6 +1234,9 @@ dependencies = [
  "hex",
  "htar-cache",
  "htar-core",
+ "htar-ebpf",
+ "htar-graphql",
+ "htar-wasm",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -1220,6 +1246,7 @@ dependencies = [
  "openraft",
  "regex",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "sha2",
@@ -1230,6 +1257,16 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "uuid",
+ "wasmtime",
+]
+
+[[package]]
+name = "htar-wasm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dashmap",
+ "tracing",
  "wasmtime",
 ]
 

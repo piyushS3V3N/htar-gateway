@@ -1,0 +1,11 @@
+[package]
+name = "htar-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "Embedded Wasmtime WebAssembly guest-host plugin execution runtime for HTAR Gateway"
+
+[dependencies]
+wasmtime.workspace = true
+dashmap.workspace = true
+tracing.workspace = true
+anyhow.workspace = true

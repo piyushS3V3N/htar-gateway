@@ -71,6 +71,12 @@ enum Commands {
         /// Path to output CNCF Gateway API CRD YAML
         #[arg(short, long, default_value = "dist/gateway-api-routes.yaml")]
         crd_output: PathBuf,
+        /// Path to output GraphQL-over-REST SDL schema
+        #[arg(short, long, default_value = "dist/schema.graphql")]
+        graphql_output: PathBuf,
+        /// Path to output MySQL 8.x OTK schema migration SQL
+        #[arg(short, long, default_value = "dist/otk_schema.sql")]
+        sql_output: PathBuf,
     },
 }
 
@@ -209,9 +215,11 @@ async fn main() -> anyhow::Result<()> {
             input,
             wasm_dir,
             crd_output,
+            graphql_output,
+            sql_output,
         } => {
             println!("=================================================================================");
-            println!(" HTAR Migration Engine — Tasks 6.1, 6.2 & 6.3 Automation");
+            println!(" HTAR Migration Engine — Layer 7 to Kubernetes-Native GraphQL & OTK Architecture");
             println!("=================================================================================");
             println!(" Ingesting bundle from input file : {:?}", input);
 
@@ -222,18 +230,26 @@ async fn main() -> anyhow::Result<()> {
             println!("   - Consumers extracted: {}", bundle.consumers.len());
             println!("   - Plugins extracted  : {}", bundle.plugins.len());
 
-            println!("\n Task 5.2: Generating eBPF XDP Driver Map C rules & Wasm targets...");
+            println!("\n Task: Generating eBPF XDP Driver Map C rules & Wasm targets...");
             MigrateEngine::generate_wasm_target(&mut bundle, &wasm_dir)?;
             MigrateEngine::generate_ebpf_xdp_maps(&bundle, &PathBuf::from("dist/ebpf"))?;
 
-            println!("\n Task 6.3: Generating CNCF Gateway API CRDs...");
+            println!("\n Task: Generating CNCF Gateway API CRDs with custom annotations...");
             MigrateEngine::generate_gateway_api_crds(&bundle, &crd_output)?;
+
+            println!("\n Task: Generating GraphQL-over-REST Schema (SDL) with query depth guards...");
+            MigrateEngine::generate_graphql_sdl(&bundle, &graphql_output)?;
+
+            println!("\n Task: Generating MySQL 8.x OTK Schema Persistence Statements...");
+            MigrateEngine::generate_mysql_otk_migration(&bundle, &sql_output)?;
 
             println!("---------------------------------------------------------------------------------");
             println!(" Migration complete!");
             println!("   - Wasm output directory : {:?}", wasm_dir);
             println!("   - eBPF map directory    : dist/ebpf");
             println!("   - Gateway API CRD output: {:?}", crd_output);
+            println!("   - GraphQL SDL output    : {:?}", graphql_output);
+            println!("   - MySQL OTK SQL output  : {:?}", sql_output);
             println!("=================================================================================");
         }
     }

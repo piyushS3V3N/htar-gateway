@@ -758,8 +758,13 @@
                     setText('metric-roi-savings', `$${roiData.total_monthly_savings_usd.toLocaleString('en-US', {minimumFractionDigits: 2})}`);
                 }
 
-                const usersData = await fetchAPI('/admin/v1/users');
-                if (usersData && usersData.users) renderUsers(usersData.users);
+                if (!window._usersFetched) {
+                    const usersData = await fetchAPI('/admin/v1/users');
+                    if (usersData && usersData.users) {
+                        renderUsers(usersData.users);
+                        window._usersFetched = true;
+                    }
+                }
 
                 const endpointsData = await fetchAPI('/admin/v1/endpoints');
                 if (endpointsData && endpointsData.endpoints) {
@@ -990,7 +995,6 @@
         }
 
         refreshData();
-        setInterval(refreshData, 5000);
     </script>
 </body>
 </html>

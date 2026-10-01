@@ -1,0 +1,10 @@
+[package]
+name = "htar-ebpf"
+version = "0.1.0"
+edition = "2021"
+description = "Kernel-level eBPF/XDP fast-drop and fast-bounce driver loader for HTAR Gateway"
+
+[dependencies]
+dashmap.workspace = true
+tracing.workspace = true
+anyhow.workspace = true

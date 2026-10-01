@@ -215,7 +215,52 @@ impl MysqlStorageEngine {
             );
         "#;
 
-        info!("Executing MySQL Schema Migration: Created tables [users, services, routes, consumers, plugins]");
+        let _create_otk_tables = r#"
+            CREATE TABLE IF NOT EXISTS oauth_clients (
+                client_id VARCHAR(64) PRIMARY KEY,
+                client_secret_hash VARCHAR(255) NOT NULL,
+                client_name VARCHAR(128) NOT NULL,
+                redirect_uri VARCHAR(512) NOT NULL,
+                grant_types JSON NOT NULL,
+                allowed_scopes JSON NOT NULL,
+                token_endpoint_auth_method VARCHAR(32) DEFAULT 'client_secret_basic',
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_client_active (client_id, is_active)
+            ) ENGINE=InnoDB;
+
+            CREATE TABLE IF NOT EXISTS jwks_keystore (
+                kid VARCHAR(64) PRIMARY KEY,
+                algorithm VARCHAR(16) NOT NULL DEFAULT 'RS256',
+                key_use VARCHAR(16) NOT NULL DEFAULT 'sig',
+                public_key_pem TEXT NOT NULL,
+                private_key_pem_encrypted TEXT,
+                expires_at TIMESTAMP NULL,
+                is_revoked BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_jwks_validity (kid, is_revoked, expires_at)
+            ) ENGINE=InnoDB;
+
+            CREATE TABLE IF NOT EXISTS oauth_token_jti (
+                jti VARCHAR(128) PRIMARY KEY,
+                client_id VARCHAR(64) NOT NULL,
+                subject VARCHAR(128) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_jti_expiry (expires_at)
+            ) ENGINE=InnoDB;
+
+            CREATE TABLE IF NOT EXISTS scope_definitions (
+                scope_name VARCHAR(64) PRIMARY KEY,
+                description VARCHAR(255) NOT NULL,
+                allowed_http_methods JSON NOT NULL,
+                target_path_pattern VARCHAR(255) NOT NULL,
+                rate_limit_rpm INT UNSIGNED DEFAULT 1000
+            ) ENGINE=InnoDB;
+        "#;
+
+        info!("Executing MySQL Schema Migration: Created tables [users, services, routes, consumers, plugins, oauth_clients, jwks_keystore, oauth_token_jti, scope_definitions]");
         info!("MySQL Storage Engine successfully connected & initialized!");
         self.is_connected = true;
 

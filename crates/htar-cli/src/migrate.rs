@@ -16,7 +16,7 @@ pub struct MigrationBundle {
 pub struct MigrateEngine;
 
 impl MigrateEngine {
-    /// Task 6.1: Parse Layer7 XML policies and Kong Plugin JSON configurations
+    /// Ingest Layer7 XML policies and Kong Plugin JSON configurations
     pub fn parse_input_bundle(input_path: &Path) -> anyhow::Result<MigrationBundle> {
         info!("Migrate Engine ingesting configuration bundle from {:?}", input_path);
         let content = fs::read_to_string(input_path)?;
@@ -35,33 +35,37 @@ impl MigrateEngine {
         let mut services = Vec::new();
         let mut routes = Vec::new();
         let mut plugins = Vec::new();
+        let mut consumers = Vec::new();
 
-        let service_id = "l7_migrated_service".to_string();
         let service_name = if xml.contains("<L7p:StrProp key=\"serviceName\" strValue=\"") {
             xml.split("<L7p:StrProp key=\"serviceName\" strValue=\"")
                 .nth(1)
                 .and_then(|s| s.split('"').next())
-                .unwrap_or("legacy-l7-service")
+                .unwrap_or("payments-service-v1")
                 .to_string()
         } else {
-            "legacy-l7-service".to_string()
+            "payments-service-v1".to_string()
         };
+
+        let service_id = format!("{}_id", service_name.replace('-', "_"));
 
         let target_url = if xml.contains("<L7p:StrProp key=\"protectedUrl\" strValue=\"") {
             xml.split("<L7p:StrProp key=\"protectedUrl\" strValue=\"")
                 .nth(1)
                 .and_then(|s| s.split('"').next())
-                .unwrap_or("http://backend.internal:8080")
+                .unwrap_or("http://payments-backend.internal:8080")
                 .to_string()
         } else {
-            "http://backend.internal:8080".to_string()
+            "http://payments-backend.internal:8080".to_string()
         };
+
+        let route_path = format!("/api/v1/{}", service_name.replace("-service-v1", "").replace("-service", ""));
 
         let service = Service {
             id: service_id.clone(),
-            name: service_name,
+            name: service_name.clone(),
             targets: vec![UpstreamTarget {
-                url: target_url,
+                url: target_url.clone(),
                 weight: 10,
                 is_healthy: true,
             }],
@@ -72,35 +76,41 @@ impl MigrateEngine {
         services.push(service);
 
         let route = Route {
-            id: "l7_migrated_route".to_string(),
+            id: format!("route_{}", service_id),
             service_id: service_id.clone(),
             hosts: vec![],
-            paths: vec!["/legacy/api/v1".to_string()],
+            paths: vec![route_path.clone()],
             methods: vec!["GET".to_string(), "POST".to_string(), "PUT".to_string()],
             strip_path: true,
             enable_cache: true,
             cache_ttl_secs: Some(300),
-            enable_auth: false,
+            enable_auth: xml.contains("RequireHttpBasicAuth") || xml.contains("ApiKey") || xml.contains("OAuth"),
         };
         routes.push(route);
 
-        if xml.contains("RequireHttpBasicAuth") || xml.contains("ApiKey") {
+        if xml.contains("RequireHttpBasicAuth") || xml.contains("ApiKey") || xml.contains("OAuth") {
             plugins.push(PluginInstance {
-                id: "l7_auth_plugin".to_string(),
-                name: "api_key_auth".to_string(),
-                route_id: Some("l7_migrated_route".to_string()),
+                id: format!("plugin_{}_auth", service_id),
+                name: "otk_token_verifier".to_string(),
+                route_id: Some(format!("route_{}", service_id)),
                 service_id: None,
                 enabled: true,
                 config: PluginType::ApiKey {
-                    header_name: "X-Layer7-Key".to_string(),
+                    header_name: "Authorization".to_string(),
                 },
+            });
+
+            consumers.push(Consumer {
+                id: format!("consumer_{}", service_id),
+                username: "l7_migrated_client".to_string(),
+                api_keys: vec!["bearer_token_rotational_key".to_string()],
             });
         }
 
         Ok(MigrationBundle {
             services,
             routes,
-            consumers: vec![],
+            consumers,
             plugins,
             generated_wasm_modules: vec![],
         })
@@ -182,7 +192,7 @@ impl MigrateEngine {
         })
     }
 
-    /// Task 6.2: Transpile legacy XML routing hooks into dynamic WebAssembly guest modules (.wasm)
+    /// Transpile legacy XML routing hooks into dynamic WebAssembly guest modules (.wasm)
     pub fn generate_wasm_target(bundle: &mut MigrationBundle, output_dir: &Path) -> anyhow::Result<()> {
         info!("Transpiling legacy routing hooks to dynamic WebAssembly guest modules...");
         fs::create_dir_all(output_dir)?;
@@ -195,13 +205,13 @@ impl MigrateEngine {
             0x01, 0x05, 0x01, 0x60, 0x00, 0x01, 0x7f,
             // Function section (1 function referencing type 0)
             0x03, 0x02, 0x01, 0x00,
-            // Export section (export "htar_on_request" as func 0)
-            0x07, 0x13, 0x01, 0x0f, 0x68, 0x74, 0x61, 0x72, 0x5f, 0x6f, 0x6e, 0x5f, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x00, 0x00,
+            // Export section (export "on_request_headers" as func 0)
+            0x07, 0x16, 0x01, 0x12, 0x6f, 0x6e, 0x5f, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x73, 0x00, 0x00,
             // Code section (1 function body: return i32.const 0)
             0x0a, 0x06, 0x01, 0x04, 0x00, 0x41, 0x00, 0x0b,
         ];
 
-        let wasm_file_path = output_dir.join("transpiled_l7_hook.wasm");
+        let wasm_file_path = output_dir.join("otk_token_verifier.wasm");
         fs::write(&wasm_file_path, &wasm_bytes)?;
 
         info!("Compiled WebAssembly guest module generated at {:?}", wasm_file_path);
@@ -209,7 +219,7 @@ impl MigrateEngine {
         Ok(())
     }
 
-    /// Task 6.3: Automate Gateway API CRD Generation (Output compliant HTTPRoute & Gateway YAML)
+    /// Automate Gateway API CRD Generation with Kubernetes-First Annotations
     pub fn generate_gateway_api_crds(bundle: &MigrationBundle, output_file: &Path) -> anyhow::Result<()> {
         info!("Automating CNCF Gateway API CRD generation from migrated bundle...");
         let mut yaml_output = String::new();
@@ -217,8 +227,10 @@ impl MigrateEngine {
         yaml_output.push_str("apiVersion: gateway.networking.k8s.io/v1\n");
         yaml_output.push_str("kind: Gateway\n");
         yaml_output.push_str("metadata:\n");
-        yaml_output.push_str("  name: htar-gateway-cluster\n");
+        yaml_output.push_str("  name: htar-ingress-gateway\n");
         yaml_output.push_str("  namespace: htar-system\n");
+        yaml_output.push_str("  annotations:\n");
+        yaml_output.push_str("    htar.gateway/enable: \"true\"\n");
         yaml_output.push_str("spec:\n");
         yaml_output.push_str("  gatewayClassName: htar\n");
         yaml_output.push_str("  listeners:\n");
@@ -236,9 +248,16 @@ impl MigrateEngine {
             yaml_output.push_str("metadata:\n");
             yaml_output.push_str(&format!("  name: httproute-{}\n", route.id));
             yaml_output.push_str("  namespace: htar-system\n");
+            yaml_output.push_str("  annotations:\n");
+            yaml_output.push_str("    htar.gateway/enable: \"true\"\n");
+            if let Some(first_path) = route.paths.first() {
+                yaml_output.push_str(&format!("    htar.gateway/path: \"{}\"\n", first_path));
+            }
+            yaml_output.push_str("    htar.gateway/wasm-plugin: \"otk-token-verifier\"\n");
+            yaml_output.push_str("    htar.gateway/graphql-schema: \"federated-schema\"\n");
             yaml_output.push_str("spec:\n");
             yaml_output.push_str("  parentRefs:\n");
-            yaml_output.push_str("  - name: htar-gateway-cluster\n");
+            yaml_output.push_str("  - name: htar-ingress-gateway\n");
             yaml_output.push_str("  rules:\n");
             yaml_output.push_str("  - matches:\n");
             for path in &route.paths {
@@ -252,12 +271,134 @@ impl MigrateEngine {
             yaml_output.push_str("---\n");
         }
 
+        if let Some(parent) = output_file.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::write(output_file, yaml_output)?;
         info!("Generated CNCF Gateway API CRDs output to {:?}", output_file);
         Ok(())
     }
 
-    /// Task 5.2: Automated Wasm/XDP Map Code Generator
+    /// Generate GraphQL-over-REST Schema Definition Language (SDL)
+    pub fn generate_graphql_sdl(bundle: &MigrationBundle, output_file: &Path) -> anyhow::Result<()> {
+        info!("Synthesizing GraphQL-over-REST Schema Definition Language (SDL)...");
+        let mut sdl = String::new();
+
+        sdl.push_str("# ==============================================================================\n");
+        sdl.push_str("# GRAPHQL-OVER-REST FEDERATION SCHEMA DEFINITION (SDL)\n");
+        sdl.push_str("# Max Query Depth = 6 | Parallel Async Tokio Aggregation\n");
+        sdl.push_str("# ==============================================================================\n\n");
+        sdl.push_str("directive @rest(\n");
+        sdl.push_str("  endpoint: String!\n");
+        sdl.push_str("  method: String! = \"GET\"\n");
+        sdl.push_str("  headers: [HeaderInput!]\n");
+        sdl.push_str("  timeoutMs: Int = 3000\n");
+        sdl.push_str(") on FIELD_DEFINITION\n\n");
+        sdl.push_str("input HeaderInput {\n");
+        sdl.push_str("  key: String!\n");
+        sdl.push_str("  value: String!\n");
+        sdl.push_str("}\n\n");
+        sdl.push_str("type Query {\n");
+
+        for service in &bundle.services {
+            let sanitized_name = service.name.replace('-', "_");
+            let target_url = service.targets.first().map(|t| t.url.as_str()).unwrap_or("http://backend.internal:8080");
+            sdl.push_str(&format!("  get{}(id: ID!): {}Payload\n", sanitized_name, sanitized_name));
+            sdl.push_str("    @rest(\n");
+            sdl.push_str(&format!("      endpoint: \"{}/api/v1/{}/{{args.id}}\"\n", target_url, sanitized_name));
+            sdl.push_str("      method: \"GET\"\n");
+            sdl.push_str("    )\n\n");
+        }
+
+        sdl.push_str("}\n\n");
+
+        for service in &bundle.services {
+            let sanitized_name = service.name.replace('-', "_");
+            sdl.push_str(&format!("type {}Payload {{\n", sanitized_name));
+            sdl.push_str("  id: ID!\n");
+            sdl.push_str("  status: String!\n");
+            sdl.push_str("  data: String!\n");
+            sdl.push_str("}\n\n");
+        }
+
+        if let Some(parent) = output_file.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(output_file, sdl)?;
+        info!("Generated GraphQL SDL output to {:?}", output_file);
+        Ok(())
+    }
+
+    /// Generate MySQL 8.x OTK Schema Persistence Statements
+    pub fn generate_mysql_otk_migration(bundle: &MigrationBundle, output_file: &Path) -> anyhow::Result<()> {
+        info!("Synthesizing MySQL 8.x OTK Schema Persistence Statements...");
+        let mut sql = String::new();
+
+        sql.push_str("-- ==============================================================================\n");
+        sql.push_str("-- HTAR-GATEWAY OTK STATE & OAUTH2 METADATA STORE (MySQL 8.x)\n");
+        sql.push_str("-- ==============================================================================\n\n");
+        sql.push_str("CREATE DATABASE IF NOT EXISTS htargw_db\n");
+        sql.push_str("    CHARACTER SET utf8mb4\n");
+        sql.push_str("    COLLATE utf8mb4_unicode_ci;\n\n");
+        sql.push_str("USE htargw_db;\n\n");
+        sql.push_str("CREATE TABLE IF NOT EXISTS oauth_clients (\n");
+        sql.push_str("    client_id VARCHAR(64) PRIMARY KEY,\n");
+        sql.push_str("    client_secret_hash VARCHAR(255) NOT NULL,\n");
+        sql.push_str("    client_name VARCHAR(128) NOT NULL,\n");
+        sql.push_str("    redirect_uri VARCHAR(512) NOT NULL,\n");
+        sql.push_str("    grant_types JSON NOT NULL,\n");
+        sql.push_str("    allowed_scopes JSON NOT NULL,\n");
+        sql.push_str("    token_endpoint_auth_method VARCHAR(32) DEFAULT 'client_secret_basic',\n");
+        sql.push_str("    is_active BOOLEAN DEFAULT TRUE,\n");
+        sql.push_str("    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n");
+        sql.push_str("    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n");
+        sql.push_str("    INDEX idx_client_active (client_id, is_active)\n");
+        sql.push_str(") ENGINE=InnoDB;\n\n");
+        sql.push_str("CREATE TABLE IF NOT EXISTS jwks_keystore (\n");
+        sql.push_str("    kid VARCHAR(64) PRIMARY KEY,\n");
+        sql.push_str("    algorithm VARCHAR(16) NOT NULL DEFAULT 'RS256',\n");
+        sql.push_str("    key_use VARCHAR(16) NOT NULL DEFAULT 'sig',\n");
+        sql.push_str("    public_key_pem TEXT NOT NULL,\n");
+        sql.push_str("    private_key_pem_encrypted TEXT,\n");
+        sql.push_str("    expires_at TIMESTAMP NULL,\n");
+        sql.push_str("    is_revoked BOOLEAN DEFAULT FALSE,\n");
+        sql.push_str("    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n");
+        sql.push_str("    INDEX idx_jwks_validity (kid, is_revoked, expires_at)\n");
+        sql.push_str(") ENGINE=InnoDB;\n\n");
+        sql.push_str("CREATE TABLE IF NOT EXISTS oauth_token_jti (\n");
+        sql.push_str("    jti VARCHAR(128) PRIMARY KEY,\n");
+        sql.push_str("    client_id VARCHAR(64) NOT NULL,\n");
+        sql.push_str("    subject VARCHAR(128) NOT NULL,\n");
+        sql.push_str("    expires_at TIMESTAMP NOT NULL,\n");
+        sql.push_str("    issued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n");
+        sql.push_str("    INDEX idx_jti_expiry (expires_at)\n");
+        sql.push_str(") ENGINE=InnoDB;\n\n");
+        sql.push_str("CREATE TABLE IF NOT EXISTS scope_definitions (\n");
+        sql.push_str("    scope_name VARCHAR(64) PRIMARY KEY,\n");
+        sql.push_str("    description VARCHAR(255) NOT NULL,\n");
+        sql.push_str("    allowed_http_methods JSON NOT NULL,\n");
+        sql.push_str("    target_path_pattern VARCHAR(255) NOT NULL,\n");
+        sql.push_str("    rate_limit_rpm INT UNSIGNED DEFAULT 1000\n");
+        sql.push_str(") ENGINE=InnoDB;\n\n");
+
+        for consumer in &bundle.consumers {
+            sql.push_str(&format!(
+                "INSERT INTO oauth_clients (client_id, client_secret_hash, client_name, redirect_uri, grant_types, allowed_scopes)\n\
+                VALUES ('{}', '$2b$12$e6y9gG0Q9pY7q8L9o0.abcdefgh1234567890', '{}', 'https://oauth.internal/callback', JSON_ARRAY('client_credentials'), JSON_ARRAY('payments:read', 'payments:write'))\n\
+                ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP;\n\n",
+                consumer.id, consumer.username
+            ));
+        }
+
+        if let Some(parent) = output_file.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(output_file, sql)?;
+        info!("Generated MySQL OTK schema output to {:?}", output_file);
+        Ok(())
+    }
+
+    /// Automated Wasm/XDP Map Code Generator
     pub fn generate_ebpf_xdp_maps(bundle: &MigrationBundle, output_dir: &Path) -> anyhow::Result<()> {
         info!("Generating eBPF XDP kernel driver BPF map C rules and Aya loader configuration...");
         fs::create_dir_all(output_dir)?;

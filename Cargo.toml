@@ -3,6 +3,9 @@ resolver = "2"
 members = [
     "crates/htar-core",
     "crates/htar-cache",
+    "crates/htar-wasm",
+    "crates/htar-graphql",
+    "crates/htar-ebpf",
     "crates/htar-proxy",
     "crates/htar-cli",
 ]

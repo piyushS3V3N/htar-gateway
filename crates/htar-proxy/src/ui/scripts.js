@@ -36,6 +36,10 @@ function switchView(viewName) {
         activeBtn.classList.add('bg-zinc-950', 'text-emerald-400', 'border-emerald-500/30', 'font-bold', 'shadow-sm');
         activeBtn.classList.remove('border-transparent', 'text-zinc-400');
     }
+
+    if (viewName === 'identity') {
+        fetchUsersOnce();
+    }
 }
 
 async function syncVault() {
@@ -149,12 +153,130 @@ async function deleteUser(username) {
         body: JSON.stringify({ username })
     });
     if (res && res.status === "deleted") {
-        refreshData();
+        await fetchUsersOnce(true);
     } else {
         alert(res?.error || "Failed to delete user identity");
     }
 }
 
+// Render ROI & Telemetry metrics without redundant network calls
+function renderRoiMetrics(roiData) {
+    if (!roiData) return;
+    if (roiData.total_requests !== undefined) {
+        setText('metric-total-requests', roiData.total_requests.toLocaleString());
+    }
+    if (roiData.req_per_sec !== undefined) {
+        setText('metric-req-rate', `${roiData.req_per_sec} req/s`);
+        setText('header-req-rate', `${roiData.req_per_sec} req/s`);
+    }
+    if (roiData.uptime_seconds !== undefined) {
+        const s = roiData.uptime_seconds;
+        const hrs = Math.floor(s / 3600);
+        const mins = Math.floor((s % 3600) / 60);
+        const secs = s % 60;
+        setText('metric-uptime', hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m ${secs}s`);
+    }
+    if (roiData.p50_latency_us) {
+        setText('metric-p50-latency', `${roiData.p50_latency_us} µs`);
+    }
+    if (roiData.p99_latency_us) {
+        setText('metric-p99-latency', `${roiData.p99_latency_us} µs`);
+    }
+    if (roiData.avg_pod_memory_mb) {
+        setText('metric-memory', `${roiData.avg_pod_memory_mb} MB`);
+    }
+    if (roiData.cache_hit_ratio !== undefined) {
+        setText('metric-cache-ratio', `${roiData.cache_hit_ratio}%`);
+    }
+    if (roiData.cache_hits !== undefined) {
+        setText('metric-cache-hits', roiData.cache_hits.toLocaleString());
+    }
+    if (roiData.cache_misses !== undefined) {
+        setText('metric-cache-misses', roiData.cache_misses.toLocaleString());
+    }
+}
+
+// Telemetry WebSocket Connection (Continuous stream, zero DB hits, zero polling)
+let telemetryWs = null;
+let telemetryWsConnected = false;
+
+function initTelemetryWebSocket() {
+    if (telemetryWs && (telemetryWs.readyState === WebSocket.OPEN || telemetryWs.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${location.host}/admin/v1/telemetry/ws`;
+
+    try {
+        telemetryWs = new WebSocket(wsUrl);
+
+        telemetryWs.onopen = () => {
+            telemetryWsConnected = true;
+            console.log("Telemetry WebSocket connected.");
+        };
+
+        telemetryWs.onmessage = (event) => {
+            try {
+                const roiData = JSON.parse(event.data);
+                renderRoiMetrics(roiData);
+            } catch (err) {
+                console.error("Telemetry WebSocket parse error:", err);
+            }
+        };
+
+        telemetryWs.onclose = () => {
+            telemetryWsConnected = false;
+            setTimeout(initTelemetryWebSocket, 3000);
+        };
+
+        telemetryWs.onerror = () => {
+            telemetryWsConnected = false;
+        };
+    } catch (e) {
+        console.warn("WebSocket initialization failed:", e);
+    }
+}
+
+// User Identity State — Fetched strictly ONCE on startup or mutation (never in periodic loop)
+let usersFetched = false;
+async function fetchUsersOnce(force = false) {
+    if (usersFetched && !force) return;
+    try {
+        const usersData = await fetchAPI(force ? '/admin/v1/users?force=true' : '/admin/v1/users');
+        if (usersData && usersData.users) {
+            renderUsers(usersData.users);
+            usersFetched = true;
+        }
+    } catch (e) {
+        console.error("Failed to fetch users:", e);
+    }
+}
+
+// Static configuration (endpoints, switchboard, wasm) fetched on demand
+async function fetchStaticConfig() {
+    try {
+        const endpointsData = await fetchAPI('/admin/v1/endpoints');
+        if (endpointsData && endpointsData.endpoints) {
+            renderEndpoints(endpointsData.endpoints);
+            renderDomainCards(endpointsData.endpoints);
+            setText('domain-count-badge', `${endpointsData.endpoints.length} Discovered Services`);
+        }
+
+        const switchboardData = await fetchAPI('/admin/v1/switchboard');
+        if (switchboardData && switchboardData.entries) {
+            renderSwitchboard(switchboardData.entries);
+        }
+
+        const wasmData = await fetchAPI('/admin/v1/plugins/wasm');
+        if (wasmData && wasmData.wasm_plugins) {
+            renderWasmPlugins(wasmData.wasm_plugins);
+        }
+    } catch (e) {
+        console.error("Failed to fetch static config:", e);
+    }
+}
+
+// Manual or on-demand refresh
 async function refreshData() {
     const icon = document.getElementById('refresh-icon');
     if (icon) icon.classList.add('animate-spin');
@@ -181,6 +303,8 @@ async function refreshData() {
 
             if (authStatus.authenticated) {
                 showDashboard();
+                initTelemetryWebSocket();
+                fetchUsersOnce();
             } else if (authStatus.auth_enabled && !authStatus.authenticated) {
                 if (!localStorage.getItem('htar_token')) {
                     showLoginScreen();
@@ -188,57 +312,12 @@ async function refreshData() {
             }
         }
 
-        const roiData = await fetchAPI('/admin/v1/roi');
-        if (roiData) {
-            if (roiData.total_requests !== undefined) {
-                setText('metric-total-requests', roiData.total_requests.toLocaleString());
-            }
-            if (roiData.req_per_sec !== undefined) {
-                setText('metric-req-rate', `${roiData.req_per_sec} req/s`);
-                setText('header-req-rate', `${roiData.req_per_sec} req/s`);
-            }
-            if (roiData.uptime_seconds !== undefined) {
-                const s = roiData.uptime_seconds;
-                const hrs = Math.floor(s / 3600);
-                const mins = Math.floor((s % 3600) / 60);
-                const secs = s % 60;
-                setText('metric-uptime', hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m ${secs}s`);
-            }
-            if (roiData.p50_latency_us) {
-                setText('metric-p50-latency', `${roiData.p50_latency_us} µs`);
-            }
-            if (roiData.p99_latency_us) {
-                setText('metric-p99-latency', `${roiData.p99_latency_us} µs`);
-            }
-            if (roiData.avg_pod_memory_mb) {
-                setText('metric-memory', `${roiData.avg_pod_memory_mb} MB`);
-            }
-            if (roiData.cache_hit_ratio !== undefined) {
-                setText('metric-cache-ratio', `${roiData.cache_hit_ratio}%`);
-            }
-            if (roiData.cache_hits !== undefined) {
-                setText('metric-cache-hits', roiData.cache_hits.toLocaleString());
-            }
-            if (roiData.cache_misses !== undefined) {
-                setText('metric-cache-misses', roiData.cache_misses.toLocaleString());
-            }
+        await fetchStaticConfig();
+
+        if (!telemetryWsConnected) {
+            const roiData = await fetchAPI('/admin/v1/roi');
+            if (roiData) renderRoiMetrics(roiData);
         }
-
-        const usersData = await fetchAPI('/admin/v1/users');
-        if (usersData && usersData.users) renderUsers(usersData.users);
-
-        const endpointsData = await fetchAPI('/admin/v1/endpoints');
-        if (endpointsData && endpointsData.endpoints) {
-            renderEndpoints(endpointsData.endpoints);
-            renderDomainCards(endpointsData.endpoints);
-            setText('domain-count-badge', `${endpointsData.endpoints.length} Discovered Services`);
-        }
-
-        const switchboardData = await fetchAPI('/admin/v1/switchboard');
-        if (switchboardData && switchboardData.entries) renderSwitchboard(switchboardData.entries);
-
-        const wasmData = await fetchAPI('/admin/v1/plugins/wasm');
-        if (wasmData && wasmData.wasm_plugins) renderWasmPlugins(wasmData.wasm_plugins);
 
     } catch (e) {
         console.error("Refresh Error:", e);
@@ -452,7 +531,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (res && res.status === "created_and_persisted") {
                 toggleModal('modal-add-user');
-                refreshData();
+                await fetchUsersOnce(true);
             } else {
                 alert(res?.error || "Failed to create user identity");
             }
@@ -469,6 +548,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Initial load: fetch static metadata, start WebSocket for telemetry, fetch users ONCE
     refreshData();
-    setInterval(refreshData, 2500);
+    initTelemetryWebSocket();
+
+    // Zero aggressive polling — Low frequency fallback ONLY for telemetry if WebSocket is disconnected
+    setInterval(() => {
+        if (!telemetryWsConnected) {
+            fetchAPI('/admin/v1/roi').then(data => { if (data) renderRoiMetrics(data); });
+        }
+    }, 10000);
 });
