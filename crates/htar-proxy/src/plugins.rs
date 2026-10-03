@@ -67,6 +67,12 @@ pub enum PluginResult {
     TooManyRequests(String),
 }
 
+impl Default for PluginPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginPipeline {
     pub fn new() -> Self {
         Self {

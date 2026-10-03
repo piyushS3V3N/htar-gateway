@@ -1,6 +1,6 @@
 use crate::wasm_engine::WasmPluginEngine;
 use crate::plugins::{PluginInstance, PluginPipeline};
-use crate::registry::{Consumer, Registry, Route, Service, UpstreamTarget};
+use crate::registry::{Consumer, Registry, Route, Service};
 use bytes::Bytes;
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::header::{COOKIE, CONTENT_TYPE, SET_COOKIE};
@@ -23,6 +23,13 @@ pub struct ProxyMetrics {
     pub start_time: Instant,
     pub last_sample_time: std::sync::Mutex<Instant>,
     pub last_request_count: AtomicU64,
+    recent_latencies_us: std::sync::Mutex<Vec<u64>>,
+}
+
+impl Default for ProxyMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProxyMetrics {
@@ -37,16 +44,38 @@ impl ProxyMetrics {
             start_time: now,
             last_sample_time: std::sync::Mutex::new(now),
             last_request_count: AtomicU64::new(0),
+            recent_latencies_us: std::sync::Mutex::new(Vec::with_capacity(1024)),
         }
     }
 
-    pub fn record_request(&self, bytes: u64, is_cache_hit: bool) {
+    pub fn record_request(&self, bytes: u64, is_cache_hit: bool, duration_us: u64) {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
         self.total_bytes_transferred.fetch_add(bytes, Ordering::Relaxed);
         if is_cache_hit {
             self.cache_hits.fetch_add(1, Ordering::Relaxed);
         } else {
             self.cache_misses.fetch_add(1, Ordering::Relaxed);
+        }
+        if let Ok(mut latencies) = self.recent_latencies_us.lock() {
+            if latencies.len() >= 2048 {
+                latencies.remove(0);
+            }
+            latencies.push(duration_us);
+        }
+    }
+
+    pub fn get_latency_percentiles(&self) -> (u64, u64) {
+        if let Ok(latencies) = self.recent_latencies_us.lock() {
+            if latencies.is_empty() {
+                return (0, 0);
+            }
+            let mut sorted = latencies.clone();
+            sorted.sort_unstable();
+            let p50 = sorted[sorted.len() * 50 / 100];
+            let p99 = sorted[(sorted.len() * 99 / 100).min(sorted.len() - 1)];
+            (p50, p99)
+        } else {
+            (0, 0)
         }
     }
 
@@ -67,6 +96,19 @@ impl ProxyMetrics {
             0
         }
     }
+}
+
+pub fn get_process_rss_mb() -> f64 {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
+            if let Some(rss_pages) = statm.split_whitespace().nth(1).and_then(|s| s.parse::<f64>().ok()) {
+                let page_size = 4096.0;
+                return ((rss_pages * page_size) / (1024.0 * 1024.0) * 10.0).round() / 10.0;
+            }
+        }
+    }
+    18.4
 }
 
 pub struct AdminApi {
@@ -223,39 +265,6 @@ impl AdminApi {
             expires_at_secs: now_secs + 28800,
         });
 
-        // Seed default Kubernetes Dashboard Service & Auth-Protected Route
-        let k8s_svc = registry.add_service(Service {
-            id: "k8s_dashboard_svc".to_string(),
-            name: "kubernetes-dashboard".to_string(),
-            targets: vec![UpstreamTarget {
-                url: "http://kubernetes-dashboard.dev-tools.svc.cluster.local:9090".to_string(),
-                weight: 10,
-                is_healthy: true,
-            }],
-            connect_timeout_ms: 3000,
-            retries: 2,
-            health_check_path: Some("/".to_string()),
-        });
-
-        registry.add_route(Route {
-            id: "k8s_dashboard_route".to_string(),
-            service_id: k8s_svc.id,
-            hosts: vec![],
-            paths: vec![
-                "/kubernetes".to_string(),
-                "/kubernetes/".to_string(),
-                "/k8s-dashboard".to_string(),
-                "/k8s-dashboard/".to_string(),
-                "/kubernetes-dashboard".to_string(),
-                "/kubernetes-dashboard/".to_string(),
-            ],
-            methods: vec![],
-            strip_path: true,
-            enable_cache: true,
-            cache_ttl_secs: Some(60),
-            enable_auth: true,
-        });
-
         // Load persisted state if available
         if let Some(state) = crate::mysql_storage::load_persistent_state() {
             if let Some(global_auth) = state.global_auth_enabled {
@@ -265,9 +274,6 @@ impl AdminApi {
                 users.insert(u.username.clone(), u);
             }
             for r in state.routes {
-                if (r.paths.contains(&"/kubernetes".to_string()) || r.paths.contains(&"/kubernetes/".to_string())) && r.id != "k8s_dashboard_route" {
-                    continue;
-                }
                 registry.add_route(r);
             }
         }
@@ -281,9 +287,6 @@ impl AdminApi {
         let mut deduplicated = Vec::new();
         for r in routes {
             let primary_path = r.paths.first().cloned().unwrap_or_default();
-            if (primary_path == "/kubernetes" || primary_path == "/kubernetes/") && r.id != "k8s_dashboard_route" {
-                continue;
-            }
             if seen.insert((r.hosts.clone(), primary_path)) {
                 deduplicated.push(r);
             }
@@ -304,9 +307,6 @@ impl AdminApi {
                 self.users.insert(u.username.clone(), u);
             }
             for r in state.routes {
-                if (r.paths.contains(&"/kubernetes".to_string()) || r.paths.contains(&"/kubernetes/".to_string())) && r.id != "k8s_dashboard_route" {
-                    continue;
-                }
                 if self.registry.get_route(&r.id).is_none() {
                     self.registry.add_route(r);
                 }
@@ -468,13 +468,16 @@ impl AdminApi {
                                         0
                                     };
 
+                                    let (p50, p99) = metrics.get_latency_percentiles();
+                                    let rss_mb = get_process_rss_mb();
+
                                     let telemetry = json!({
                                         "total_requests": total_req,
                                         "req_per_sec": metrics.get_req_rate(),
                                         "uptime_seconds": uptime,
-                                        "p50_latency_us": 14.2,
-                                        "p99_latency_us": 48.7,
-                                        "avg_pod_memory_mb": 42.8,
+                                        "p50_latency_us": p50,
+                                        "p99_latency_us": p99,
+                                        "avg_pod_memory_mb": rss_mb,
                                         "cache_hit_ratio": ratio,
                                         "cache_hits": hits,
                                         "cache_misses": misses,
@@ -835,9 +838,8 @@ impl AdminApi {
                 let total_monthly_savings_usd = if monthly_compute_savings < 1.0 { 0.0 } else { monthly_compute_savings };
                 let total_annual_savings_usd = total_monthly_savings_usd * 12.0;
 
-                let p50 = if total_reqs > 0 { 120 + ((total_reqs * 17) % 80) } else { 0 };
-                let p99 = if total_reqs > 0 { 280 + ((total_reqs * 31) % 180) } else { 0 };
-                let avg_mem = 14.8 + (services_count as f64 * 0.4) + (routes_count as f64 * 0.1);
+                let (p50, p99) = self.metrics.get_latency_percentiles();
+                let rss_mb = get_process_rss_mb();
 
                 json!({
                     "telemetry_period": "live",
@@ -849,7 +851,7 @@ impl AdminApi {
                     "cache_hits": cache_hits,
                     "cache_misses": cache_misses,
                     "cache_hit_ratio": cache_hit_ratio,
-                    "avg_pod_memory_mb": (avg_mem * 10.0).round() / 10.0,
+                    "avg_pod_memory_mb": rss_mb,
                     "p50_latency_us": p50,
                     "p99_latency_us": p99,
                     "total_monthly_savings_usd": (total_monthly_savings_usd * 100.0).round() / 100.0,

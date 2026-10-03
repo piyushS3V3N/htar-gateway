@@ -13,7 +13,7 @@ use hyper_util::server::conn::auto;
 use htar_cache::HtarCacheManager;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
@@ -78,18 +78,33 @@ impl GatewayServer {
         // Start background health checking loop
         Registry::start_health_checker(registry.clone(), Duration::from_secs(10));
 
-        // Start Kubernetes Auto-Discovery Controller (watching Services and Ingresses)
-        crate::k8s_controller::K8sController::start_auto_discovery(registry.clone());
+        // Start Kubernetes controllers if explicitly enabled in configuration OR if running inside a Kubernetes cluster pod
+        let in_k8s_cluster = std::env::var("KUBERNETES_SERVICE_HOST").is_ok()
+            || std::path::Path::new("/var/run/secrets/kubernetes.io/serviceaccount/token").exists();
+        let k8s_enabled = config.kubernetes.enabled || in_k8s_cluster;
 
-        // Start CNCF Kubernetes Gateway API v1.x Controller
-        crate::gateway_api::GatewayApiController::start_gateway_api_watcher(registry.clone());
+        if k8s_enabled {
+            if in_k8s_cluster {
+                info!("Kubernetes cluster pod environment detected (KUBERNETES_SERVICE_HOST present). Starting auto-discovery...");
+            } else {
+                info!("Kubernetes integration explicitly enabled in config. Starting auto-discovery...");
+            }
+            crate::k8s_controller::K8sController::start_auto_discovery(registry.clone());
+            crate::gateway_api::GatewayApiController::start_gateway_api_watcher(registry.clone());
+        } else {
+            info!("Running in standalone mode (Kubernetes auto-discovery disabled).");
+        }
 
         let mut cache = HtarCacheManager::new();
         if let Some(path) = &config.cache.htar_bundle_path {
-            if let Err(e) = cache.load_archive(path) {
-                warn!("Failed to load HTAR bundle archive from {:?}: {}", path, e);
+            if std::path::Path::new(path).exists() {
+                if let Err(e) = cache.load_archive(path) {
+                    warn!("Failed to load HTAR bundle archive from {:?}: {}", path, e);
+                } else {
+                    info!("Successfully mounted HTAR cold cache bundle from {:?}", path);
+                }
             } else {
-                info!("Successfully mounted HTAR cold cache bundle from {:?}", path);
+                info!("HTAR cold cache bundle {:?} not found; starting with in-memory hot cache.", path);
             }
         }
 
@@ -165,7 +180,24 @@ impl GatewayServer {
         req: Request<Incoming>,
         remote_addr: SocketAddr,
     ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-        self.metrics.record_request(512, true);
+        let req_start = Instant::now();
+        let res = self.dispatch_request(req, remote_addr).await;
+        let duration_us = req_start.elapsed().as_micros() as u64;
+
+        let is_cache_hit = match &res {
+            Ok(r) => r.headers().get("X-HTAR-Cache").map(|v| v == "HIT").unwrap_or(false),
+            Err(_) => false,
+        };
+
+        self.metrics.record_request(512, is_cache_hit, duration_us);
+        res
+    }
+
+    async fn dispatch_request(
+        &self,
+        req: Request<Incoming>,
+        remote_addr: SocketAddr,
+    ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
         let method = req.method().clone();
         let path = req.uri().path().to_string();
         let req_host = req.headers().get("host").and_then(|h| h.to_str().ok()).unwrap_or("*").to_string();
@@ -269,28 +301,31 @@ impl GatewayServer {
         let is_k8s_api = path.contains("/api/v1/") || path.contains("/kubernetes/api/");
         let is_k8s_root = (path.starts_with("/kubernetes") || path.starts_with("/k8s-dashboard") || path.starts_with("/kubernetes-dashboard")) && !is_k8s_api;
         let requires_auth = (route.enable_auth && !is_k8s_api || is_k8s_root) && self.admin_api.is_auth_enabled();
-        if requires_auth {
-            if !self.admin_api.is_authenticated(&req) {
-                info!("Unauthorized access attempt blocked on auth-protected route '{}': {}", route.id, path);
+        if requires_auth && !self.admin_api.is_authenticated(&req) {
+            info!("Unauthorized access attempt blocked on auth-protected route '{}': {}", route.id, path);
 
-                // If browser navigation (accept header containing text/html), serve the internal Auth Portal UI
-                let accepts_html = req.headers().get("accept").and_then(|h| h.to_str().ok()).map(|a| a.contains("text/html")).unwrap_or(false);
-                if accepts_html && method == Method::GET {
-                    let html = crate::ui::render_dashboard_html();
-                    let mut res = Response::new(full_body(Bytes::from(html)));
-                    res.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
-                    return Ok(res);
+            // If browser navigation (accept header containing text/html), redirect to /admin?redirect=<path>
+            let accepts_html = req.headers().get("accept").and_then(|h| h.to_str().ok()).map(|a| a.contains("text/html")).unwrap_or(false);
+            if accepts_html && method == Method::GET {
+                let target = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or(&path);
+                let redirect_url = format!("/admin?redirect={}", target);
+                let mut res = Response::new(full_body(Bytes::from(format!("302 Found: Redirecting to login at {}", redirect_url))));
+                *res.status_mut() = StatusCode::FOUND;
+                if let Ok(loc) = HeaderValue::from_str(&redirect_url) {
+                    res.headers_mut().insert(hyper::header::LOCATION, loc);
                 }
-
-                let mut res = Response::new(full_body(Bytes::from(serde_json::json!({
-                    "error": "Authentication required for this endpoint. Please log in at /admin",
-                    "login_url": "/admin",
-                    "status": 401
-                }).to_string())));
-                *res.status_mut() = StatusCode::UNAUTHORIZED;
-                res.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                 return Ok(res);
             }
+
+            let redirect_target = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or(&path);
+            let mut res = Response::new(full_body(Bytes::from(serde_json::json!({
+                "error": "Authentication required for this endpoint. Please log in at /admin",
+                "login_url": format!("/admin?redirect={}", redirect_target),
+                "status": 401
+            }).to_string())));
+            *res.status_mut() = StatusCode::UNAUTHORIZED;
+            res.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            return Ok(res);
         }
 
         // Extract Request Headers for Plugin Pipeline

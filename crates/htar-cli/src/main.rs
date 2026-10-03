@@ -2,7 +2,6 @@ use clap::{Parser, Subcommand};
 use htar_core::{CompressionType, HtarReader, HtarWriter};
 use htar_proxy::GatewayConfig;
 use std::fs::{self, File};
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{info, Level};
@@ -60,23 +59,17 @@ enum Commands {
         #[arg(short, long, default_value = "http://127.0.0.1:8443")]
         server: String,
     },
-    /// Migrate legacy Layer7 XML or Kong JSON bundles to HTAR Gateway format, Wasm guests & Gateway API CRDs
+    /// Migrate legacy Layer7 XML or Kong JSON bundles to HTAR Gateway configuration & CNCF Gateway API CRDs
     Migrate {
         /// Path to input Layer7 XML policy file or Kong JSON bundle
         #[arg(short, long)]
         input: PathBuf,
-        /// Directory to output generated Wasm guest bytecode modules
-        #[arg(short, long, default_value = "dist/wasm")]
-        wasm_dir: PathBuf,
+        /// Path to output HTAR Gateway TOML configuration (e.g. dist/gateway.toml)
+        #[arg(short, long, default_value = "dist/gateway.toml")]
+        config_output: PathBuf,
         /// Path to output CNCF Gateway API CRD YAML
-        #[arg(short, long, default_value = "dist/gateway-api-routes.yaml")]
+        #[arg(long, default_value = "dist/gateway-api-routes.yaml")]
         crd_output: PathBuf,
-        /// Path to output GraphQL-over-REST SDL schema
-        #[arg(short, long, default_value = "dist/schema.graphql")]
-        graphql_output: PathBuf,
-        /// Path to output MySQL 8.x OTK schema migration SQL
-        #[arg(short, long, default_value = "dist/otk_schema.sql")]
-        sql_output: PathBuf,
     },
 }
 
@@ -213,43 +206,31 @@ async fn main() -> anyhow::Result<()> {
         }
         Commands::Migrate {
             input,
-            wasm_dir,
+            config_output,
             crd_output,
-            graphql_output,
-            sql_output,
         } => {
             println!("=================================================================================");
-            println!(" HTAR Migration Engine — Layer 7 to Kubernetes-Native GraphQL & OTK Architecture");
+            println!(" HTAR Migration Engine — Layer 7 & Kong to Native HTAR Gateway Configuration");
             println!("=================================================================================");
             println!(" Ingesting bundle from input file : {:?}", input);
 
-            let mut bundle = MigrateEngine::parse_input_bundle(&input)?;
+            let bundle = MigrateEngine::parse_input_bundle(&input)?;
             println!(" Successfully parsed legacy config bundle:");
             println!("   - Services extracted : {}", bundle.services.len());
             println!("   - Routes extracted   : {}", bundle.routes.len());
             println!("   - Consumers extracted: {}", bundle.consumers.len());
             println!("   - Plugins extracted  : {}", bundle.plugins.len());
 
-            println!("\n Task: Generating eBPF XDP Driver Map C rules & Wasm targets...");
-            MigrateEngine::generate_wasm_target(&mut bundle, &wasm_dir)?;
-            MigrateEngine::generate_ebpf_xdp_maps(&bundle, &PathBuf::from("dist/ebpf"))?;
+            println!("\n Task: Generating runnable HTAR Gateway TOML configuration...");
+            MigrateEngine::generate_gateway_config(&bundle, &config_output)?;
 
-            println!("\n Task: Generating CNCF Gateway API CRDs with custom annotations...");
+            println!("\n Task: Generating CNCF Gateway API CRDs with Kubernetes annotations...");
             MigrateEngine::generate_gateway_api_crds(&bundle, &crd_output)?;
-
-            println!("\n Task: Generating GraphQL-over-REST Schema (SDL) with query depth guards...");
-            MigrateEngine::generate_graphql_sdl(&bundle, &graphql_output)?;
-
-            println!("\n Task: Generating MySQL 8.x OTK Schema Persistence Statements...");
-            MigrateEngine::generate_mysql_otk_migration(&bundle, &sql_output)?;
 
             println!("---------------------------------------------------------------------------------");
             println!(" Migration complete!");
-            println!("   - Wasm output directory : {:?}", wasm_dir);
-            println!("   - eBPF map directory    : dist/ebpf");
+            println!("   - Gateway Config output : {:?}", config_output);
             println!("   - Gateway API CRD output: {:?}", crd_output);
-            println!("   - GraphQL SDL output    : {:?}", graphql_output);
-            println!("   - MySQL OTK SQL output  : {:?}", sql_output);
             println!("=================================================================================");
         }
     }
@@ -294,42 +275,109 @@ fn pack_dir_recursive<P: AsRef<Path>>(
 }
 
 fn run_benchmark(count: usize) -> anyhow::Result<()> {
-    let mut buffer = Vec::new();
-    let mut writer = HtarWriter::new(&mut buffer);
+    let temp_file = tempfile::NamedTempFile::new()?;
+    let temp_path = temp_file.path().to_path_buf();
 
-    for i in 0..count {
-        let key = format!("GET:/api/v1/resource/item_{}", i);
-        let payload = format!("{{\"id\": {}, \"name\": \"item_{}\", \"payload\": \"sample_data_content\"}}", i, i);
-        writer.add_entry(key, payload.as_bytes(), "application/json", CompressionType::Zstd)?;
+    println!("Generating benchmark HTAR archive on disk ({} entries)...", count);
+    {
+        let file = File::create(&temp_path)?;
+        let mut writer = HtarWriter::new(file).with_compression_level(3);
+
+        for i in 0..count {
+            let key = format!("GET:/api/v1/resource/item_{}", i);
+            let payload = format!(
+                "{{\"id\": {}, \"name\": \"item_{}\", \"payload\": \"sample_data_content_{}\"}}",
+                i, i, i
+            );
+            writer.add_entry(key, payload.as_bytes(), "application/json", CompressionType::Zstd)?;
+        }
+        writer.finish()?;
     }
-    writer.finish()?;
 
-    let total_size = buffer.len();
-    println!("Created benchmark HTAR archive with {} entries ({:.2} KB).", count, total_size as f64 / 1024.0);
+    let file_size = fs::metadata(&temp_path)?.len();
+    println!("Archived file size on disk: {:.2} KB", file_size as f64 / 1024.0);
 
-    let mut reader = HtarReader::open(Cursor::new(&buffer))?;
+    let mut reader = HtarReader::open(File::open(&temp_path)?)?;
+    let iterations = 50_000;
 
-    // Benchmark O(1) lookups
-    let target_key = format!("GET:/api/v1/resource/item_{}", count - 1);
-    let iterations = 100_000;
+    // Generate genuine pseudo-random keys across the entire index space
+    println!("Pre-generating {} uniform random query keys across all {} entries...", iterations, count);
+    let mut rng: u64 = 0x853c49e6748fea9b;
+    let query_keys: Vec<String> = (0..iterations)
+        .map(|_| {
+            rng ^= rng >> 12;
+            rng ^= rng << 25;
+            rng ^= rng >> 27;
+            let idx = (rng as usize) % count;
+            format!("GET:/api/v1/resource/item_{}", idx)
+        })
+        .collect();
 
-    let start = Instant::now();
-    for _ in 0..iterations {
-        let _ = reader.read_payload(&target_key)?;
+    // -------------------------------------------------------------
+    // BENCHMARK 1: O(1) In-Memory Hashtable Index Resolution
+    // -------------------------------------------------------------
+    println!("Running Benchmark 1: In-Memory O(1) Hashtable Index Lookup...");
+    let mut index_latencies_ns = Vec::with_capacity(iterations);
+    let start_index = Instant::now();
+    for key in &query_keys {
+        let t0 = Instant::now();
+        let entry = reader.get_entry(key);
+        index_latencies_ns.push(t0.elapsed().as_nanos() as u64);
+        assert!(entry.is_some());
     }
-    let elapsed = start.elapsed();
+    let total_index_time = start_index.elapsed();
+    index_latencies_ns.sort_unstable();
 
-    let ns_per_op = elapsed.as_nanos() as f64 / iterations as f64;
-    let ops_per_sec = (iterations as f64 / elapsed.as_secs_f64()) as u64;
+    let p50_index = index_latencies_ns[iterations * 50 / 100];
+    let p95_index = index_latencies_ns[iterations * 95 / 100];
+    let p99_index = index_latencies_ns[iterations * 99 / 100];
+    let avg_index_ns = total_index_time.as_nanos() as f64 / iterations as f64;
+    let index_throughput = (iterations as f64 / total_index_time.as_secs_f64()) as u64;
 
-    println!("--------------------------------------------------");
-    println!(" RESULTS: HTAR Hashtable O(1) Payload Retrieval");
-    println!("--------------------------------------------------");
-    println!(" Total random reads : {}", iterations);
-    println!(" Total elapsed time : {:?}", elapsed);
-    println!(" Average latency    : {:.2} ns / lookup", ns_per_op);
-    println!(" Throughput         : {} ops / second", ops_per_sec);
-    println!("--------------------------------------------------");
+    // -------------------------------------------------------------
+    // BENCHMARK 2: Full Random Read (File Seek + Read + Zstd Decompression)
+    // -------------------------------------------------------------
+    println!("Running Benchmark 2: End-to-End File Seek, Read & Zstd Decompression...");
+    let mut payload_latencies_ns = Vec::with_capacity(iterations);
+    let start_payload = Instant::now();
+    for key in &query_keys {
+        let t0 = Instant::now();
+        let payload = reader.read_payload(key)?;
+        payload_latencies_ns.push(t0.elapsed().as_nanos() as u64);
+        assert!(!payload.is_empty());
+    }
+    let total_payload_time = start_payload.elapsed();
+    payload_latencies_ns.sort_unstable();
+
+    let p50_payload = payload_latencies_ns[iterations * 50 / 100];
+    let p95_payload = payload_latencies_ns[iterations * 95 / 100];
+    let p99_payload = payload_latencies_ns[iterations * 99 / 100];
+    let avg_payload_ns = total_payload_time.as_nanos() as f64 / iterations as f64;
+    let payload_throughput = (iterations as f64 / total_payload_time.as_secs_f64()) as u64;
+
+    println!("\n================================================================================");
+    println!(" REAL HTAR PERFORMANCE BENCHMARK RESULTS (N = {} indexed items)", count);
+    println!("================================================================================");
+    println!(" Benchmark Environment  : Real Disk File ({:.2} KB on disk)", file_size as f64 / 1024.0);
+    println!(" Access Distribution   : Uniform Pseudo-Random across all keys (zero key pinning)");
+    println!(" Total Queries Run      : {} lookups per test", iterations);
+    println!("--------------------------------------------------------------------------------");
+    println!(" TEST 1: In-Memory O(1) Hashtable Index Resolution (Zero-I/O Metadata Lookup)");
+    println!("--------------------------------------------------------------------------------");
+    println!("   Throughput           : {:>10} lookups / sec", index_throughput);
+    println!("   Average Latency      : {:>10.2} ns", avg_index_ns);
+    println!("   P50 Latency (median) : {:>10} ns", p50_index);
+    println!("   P95 Latency          : {:>10} ns", p95_index);
+    println!("   P99 Latency          : {:>10} ns", p99_index);
+    println!("--------------------------------------------------------------------------------");
+    println!(" TEST 2: End-to-End File Retrieval (Disk Seek + Read + Zstandard Decompression)");
+    println!("--------------------------------------------------------------------------------");
+    println!("   Throughput           : {:>10} payloads / sec", payload_throughput);
+    println!("   Average Latency      : {:>10.2} µs ({:.0} ns)", avg_payload_ns / 1000.0, avg_payload_ns);
+    println!("   P50 Latency (median) : {:>10.2} µs", p50_payload as f64 / 1000.0);
+    println!("   P95 Latency          : {:>10.2} µs", p95_payload as f64 / 1000.0);
+    println!("   P99 Latency          : {:>10.2} µs", p99_payload as f64 / 1000.0);
+    println!("================================================================================");
 
     Ok(())
 }

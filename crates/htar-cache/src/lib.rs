@@ -34,6 +34,12 @@ pub struct HtarCacheManager {
     pub stats: Arc<RwLock<CacheStats>>,
 }
 
+impl Default for HtarCacheManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HtarCacheManager {
     pub fn new() -> Self {
         Self {

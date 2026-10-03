@@ -9,7 +9,7 @@ impl Router {
     pub fn new(routes: Vec<RouteConfig>) -> Self {
         // Sort routes by longest prefix match first
         let mut sorted = routes;
-        sorted.sort_by(|a, b| b.path_prefix.len().cmp(&a.path_prefix.len()));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.path_prefix.len()));
         Self { routes: sorted }
     }
 

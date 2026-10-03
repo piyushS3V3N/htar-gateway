@@ -51,9 +51,17 @@ pub struct RouteConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct KubernetesConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GatewayConfig {
     pub server: ServerConfig,
     pub cache: CacheConfig,
+    #[serde(default)]
+    pub kubernetes: KubernetesConfig,
     #[serde(default)]
     pub routes: Vec<RouteConfig>,
 }

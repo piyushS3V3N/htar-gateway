@@ -58,6 +58,12 @@ pub struct Registry {
     lb_counters: Arc<DashMap<String, Arc<AtomicUsize>>>,
 }
 
+impl Default for Registry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Registry {
     pub fn new() -> Self {
         Self {

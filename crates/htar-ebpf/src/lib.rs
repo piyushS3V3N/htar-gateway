@@ -16,6 +16,12 @@ pub enum XdpAction {
     TxBounceHealth,
 }
 
+impl Default for EbpfXdpManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EbpfXdpManager {
     pub fn new() -> Self {
         Self {

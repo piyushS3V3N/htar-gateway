@@ -79,6 +79,18 @@ function showLoginScreen() {
     if (loginEl) loginEl.classList.remove('hidden');
     if (headerEl) headerEl.classList.add('hidden');
     if (consoleEl) consoleEl.classList.add('hidden');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const redirectParam = urlParams.get('redirect');
+    const noticeEl = document.getElementById('redirect-notice');
+    if (noticeEl) {
+        if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin')) {
+            noticeEl.innerText = `Redirecting to ${redirectParam} after authentication`;
+            noticeEl.classList.remove('hidden');
+        } else {
+            noticeEl.classList.add('hidden');
+        }
+    }
 }
 
 function showDashboard() {
@@ -111,6 +123,21 @@ async function performLogin(username, password) {
         const data = await res.json();
         if (res.ok && data.status === "authenticated" && data.token) {
             localStorage.setItem('htar_token', data.token);
+
+            // Check if there is an intended redirect target (e.g. /kubernetes/ or from ?redirect=)
+            const urlParams = new URLSearchParams(window.location.search);
+            const redirectParam = urlParams.get('redirect');
+            if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin')) {
+                window.location.href = redirectParam;
+                return;
+            }
+
+            const currentPath = window.location.pathname;
+            if (!currentPath.startsWith('/admin')) {
+                window.location.reload();
+                return;
+            }
+
             showDashboard();
             await refreshData();
         } else {
@@ -302,6 +329,20 @@ async function refreshData() {
             }
 
             if (authStatus.authenticated) {
+                // If user is already authenticated and accessed /admin?redirect=..., forward immediately
+                const urlParams = new URLSearchParams(window.location.search);
+                const redirectParam = urlParams.get('redirect');
+                if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin')) {
+                    window.location.href = redirectParam;
+                    return;
+                }
+
+                const currentPath = window.location.pathname;
+                if (!currentPath.startsWith('/admin')) {
+                    window.location.reload();
+                    return;
+                }
+
                 showDashboard();
                 initTelemetryWebSocket();
                 fetchUsersOnce();

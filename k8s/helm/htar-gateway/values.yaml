@@ -37,6 +37,7 @@ config:
   workerThreads: 8
   cacheEnabled: true
   maxHotMemoryMb: 512
+  kubernetesEnabled: true
 
 # --- Enterprise Identity & Authentication Section ---
 # Zero plaintext secrets stored in Helm values!

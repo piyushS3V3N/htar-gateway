@@ -213,9 +213,9 @@ impl K8sController {
 
         if let Some(spec) = &ing.spec {
             if let Some(rules) = &spec.rules {
-                for (_rule_idx, rule) in rules.iter().enumerate() {
+                for rule in rules.iter() {
                     if let Some(http) = &rule.http {
-                        for (_path_idx, p) in http.paths.iter().enumerate() {
+                        for p in http.paths.iter() {
                             let path_str = p.path.clone().unwrap_or_else(|| "/".to_string());
                             if let Some(backend_svc) = &p.backend.service {
                                 let target_svc_name = &backend_svc.name;

@@ -1,9 +1,7 @@
 pub mod admin;
 pub mod config;
-pub mod ebpf_loader;
 pub mod gateway_api;
 pub mod gossip;
-pub mod graphql_federation;
 pub mod k8s_controller;
 pub mod mysql_storage;
 pub mod plugins;
@@ -17,10 +15,10 @@ pub mod wasm_engine;
 
 pub use admin::AdminApi;
 pub use config::GatewayConfig;
-pub use ebpf_loader::EbpfXdpManager;
+pub use htar_ebpf::EbpfXdpManager;
 pub use gateway_api::GatewayApiController;
 pub use gossip::GossipClusterManager;
-pub use graphql_federation::GraphqlFederationEngine;
+pub use htar_graphql::GraphqlFederationEngine;
 pub use k8s_controller::K8sController;
 pub use mysql_storage::{MysqlConfig, MysqlStorageEngine};
 pub use plugins::{PluginInstance, PluginPipeline, PluginType};

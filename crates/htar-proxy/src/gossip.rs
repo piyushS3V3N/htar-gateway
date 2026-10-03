@@ -12,10 +12,10 @@ pub enum ClusterGossipMessage {
 }
 
 pub struct GossipClusterManager {
-    node_id: String,
-    listen_addr: SocketAddr,
-    cache: Arc<HtarCacheManager>,
-    purge_tx: mpsc::UnboundedSender<ClusterGossipMessage>,
+    pub node_id: String,
+    pub listen_addr: SocketAddr,
+    pub cache: Arc<HtarCacheManager>,
+    pub purge_tx: mpsc::UnboundedSender<ClusterGossipMessage>,
 }
 
 impl GossipClusterManager {
@@ -35,7 +35,7 @@ impl GossipClusterManager {
     pub fn start_cluster_node(
         node_id: String,
         gossip_addr: SocketAddr,
-        seed_nodes: Vec<String>,
+        _seed_nodes: Vec<String>,
         cache: Arc<HtarCacheManager>,
     ) -> mpsc::UnboundedSender<ClusterGossipMessage> {
         let (manager, mut purge_rx) = Self::new(node_id.clone(), gossip_addr, cache.clone());

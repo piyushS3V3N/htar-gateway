@@ -15,3 +15,6 @@ data:
     enabled = {{ .Values.config.cacheEnabled }}
     max_hot_memory_mb = {{ .Values.config.maxHotMemoryMb }}
     default_ttl_secs = 300
+
+    [kubernetes]
+    enabled = {{ .Values.config.kubernetesEnabled | default true }}
