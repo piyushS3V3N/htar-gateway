@@ -1,0 +1,18 @@
+[server]
+host = "0.0.0.0"
+port = 8443
+worker_threads = 4
+
+[cache]
+enabled = true
+max_hot_memory_mb = 256
+default_ttl_secs = 300
+
+[[routes]]
+id = "route_payments_service_v1_id"
+path_prefix = "/api/v1/payments"
+upstream_url = "http://payments-backend.internal:8080"
+strip_path = true
+health_check_path = "/health"
+enable_cache = true
+cache_ttl_secs = 300
