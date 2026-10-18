@@ -29,6 +29,8 @@ spec:
           {{ `{{- end -}}` }}
         {{- end }}
     spec:
+      hostNetwork: {{ .Values.hostNetwork | default false }}
+      dnsPolicy: {{ if .Values.hostNetwork }}ClusterFirstWithHostNet{{ else }}ClusterFirst{{ end }}
       serviceAccountName: {{ include "htar-gateway.serviceAccountName" . }}
       securityContext:
         runAsNonRoot: true
@@ -54,6 +56,9 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.config.port }}
+              {{- if .Values.service.hostPort }}
+              hostPort: {{ .Values.service.hostPort }}
+              {{- end }}
               protocol: TCP
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
@@ -61,7 +66,7 @@ spec:
             httpGet:
               path: /_htar/health
               port: {{ .Values.config.port }}
-            initialDelaySeconds: 5
+            initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
@@ -69,13 +74,23 @@ spec:
             httpGet:
               path: /_htar/health
               port: {{ .Values.config.port }}
-            initialDelaySeconds: 2
+            initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 2
             successThreshold: 1
           volumeMounts:
             - name: config-volume
               mountPath: /app/config
+            - name: storage-volume
+              mountPath: /tmp/htargw-store
+      initContainers:
+        - name: init-permissions
+          image: busybox:latest
+          command: ["sh", "-c", "chown -R 10001:10001 /tmp/htargw-store && chmod -R 775 /tmp/htargw-store"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          volumeMounts:
             - name: storage-volume
               mountPath: /tmp/htargw-store
       volumes:

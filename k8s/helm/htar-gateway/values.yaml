@@ -1,4 +1,5 @@
-replicaCount: 2
+replicaCount: 1
+hostNetwork: true
 
 image:
   repository: htar-gateway
@@ -13,9 +14,12 @@ rbac:
   create: true
 
 service:
-  type: LoadBalancer
-  port: 80
+  type: ClusterIP
+  port: 8443
   targetPort: 8443
+  hostPort: 8443
+  externalIPs:
+    - 100.123.25.126
 
 resources:
   limits:
@@ -26,9 +30,9 @@ resources:
     memory: 256Mi
 
 autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
   targetCPUUtilizationPercentage: 70
 
 config:
